@@ -44,6 +44,17 @@ async function restart(target?: string) {
   await launch(target);
 }
 
+async function delayWorkspaceWrites() {
+  await application.evaluate(() => {
+    const fs = process.getBuiltinModule('fs/promises');
+    const rename = fs.rename;
+    fs.rename = async (...args) => {
+      if (String(args[1]).endsWith('workspace.json')) await new Promise(resolve => setTimeout(resolve, 400));
+      return rename(...args);
+    };
+  });
+}
+
 test.beforeEach(async () => {
   rendererErrors = [];
   directory = await mkdtemp(path.join(os.tmpdir(), 'slate-desktop-'));
@@ -347,14 +358,7 @@ test('discard confirmation uses shadcn and closes only the requested tab', async
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Unsaved edits\n');
   // A slow settings write must not leave a newly displayed tab unable to accept Close.
-  await application.evaluate(() => {
-    const fs = process.getBuiltinModule('fs/promises');
-    const rename = fs.rename;
-    fs.rename = async (...args) => {
-      if (String(args[1]).endsWith('workspace.json')) await new Promise(resolve => setTimeout(resolve, 400));
-      return rename(...args);
-    };
-  });
+  await delayWorkspaceWrites();
   await page.getByRole('button', { name: 'next.md', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Next document' })).toBeVisible();
   await page.getByRole('button', { name: 'Close sample.md', exact: true }).click();
@@ -693,6 +697,9 @@ test('dragging tabs changes their order and restores that order on restart', asy
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   for (const name of ['second.md', 'third.md']) await page.getByRole('button', { name, exact: true }).click();
   const tablist = page.getByRole('tablist', { name: 'Open documents' });
+  await expect(tablist.getByRole('tab')).toHaveText(['sample.md', 'second.md', 'third.md']);
+  // Restart immediately after the displayed reorder, even when saving the order is slow.
+  await delayWorkspaceWrites();
   await tablist.getByRole('tab', { name: 'third.md', exact: true }).dragTo(tablist.getByRole('tab', { name: 'sample.md', exact: true }), { targetPosition: { x: 3, y: 10 } });
   await expect(tablist.getByRole('tab')).toHaveText(['third.md', 'sample.md', 'second.md']);
   await expect(tablist.getByRole('tab', { name: 'third.md', exact: true })).toHaveAttribute('aria-selected', 'true');

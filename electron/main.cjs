@@ -361,8 +361,8 @@ handle('document:reorder', ids => exclusive(async () => {
   const ordered = ids.map(id => documents.get(id));
   documents.clear();
   for (const record of ordered) documents.set(record.id, record);
-  send('document:loaded', snapshot());
   await rememberSession();
+  send('document:loaded', snapshot());
 }));
 handle('document:reload', () => exclusive(async () => {
   const record = current();
