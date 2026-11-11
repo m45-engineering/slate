@@ -19,6 +19,7 @@ async function launch(target?: string) {
   });
   applicationClosed = false;
   application.once('close', () => { applicationClosed = true; });
+  await application.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
   page = await application.firstWindow();
   page.on('pageerror', error => rendererErrors.push(error.message));
   await application.evaluate(({ BrowserWindow }, ci) => {
@@ -26,15 +27,16 @@ async function launch(target?: string) {
       // Set a starting window size; layout tests also set the browser viewport explicitly.
       window.setContentSize(1120, 800);
       window.webContents.setBackgroundThrottling(false);
-      // Keep CI windows drawable for screenshots; local tests must not take the user's focus.
+      // CI exercises a normal foreground window, including native input and focus.
+      // Only local runs suppress focus to avoid taking the user's keyboard input.
       if (ci) {
-        window.showInactive();
-        window.show = () => window.showInactive();
+        window.show();
+        window.focus();
       } else {
         window.hide();
         window.show = () => {};
+        window.focus = () => {};
       }
-      window.focus = () => {};
     }
   }, Boolean(process.env.CI));
 }
@@ -64,8 +66,22 @@ test.beforeEach(async () => {
   await expect(page.getByRole('heading', { name: 'A real document', exact: true })).toBeVisible();
 });
 
-test.afterEach(async () => {
+test.afterEach(async ({}, testInfo) => {
   if (application && !applicationClosed) {
+    const failed = testInfo.status !== testInfo.expectedStatus;
+    try {
+      if (failed && !page.isClosed()) {
+        await testInfo.attach('electron-page-state', {
+          body: await page.locator('body').ariaSnapshot({ timeout: 3000 }), contentType: 'text/plain',
+        });
+      }
+      const trace = failed ? testInfo.outputPath('electron-trace.zip') : undefined;
+      await application.context().tracing.stop(trace ? { path: trace } : undefined);
+      if (trace) await testInfo.attach('electron-trace', { path: trace, contentType: 'application/zip' });
+    } catch (error) {
+      // A crashed app may be unable to provide diagnostics; preserve the original failure.
+      await testInfo.attach('electron-diagnostics-error', { body: String(error), contentType: 'text/plain' });
+    }
     await application.evaluate(({ app }) => app.exit(0));
     await application.close();
   }
