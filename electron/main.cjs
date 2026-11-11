@@ -92,18 +92,24 @@ function addDocument(document = null, draft = null) {
   watchDocument(record);
   return record;
 }
-async function rememberSession() {
+async function rememberSession(reportError = true) {
   try {
     await sessionStore.save({ folder: folder.root, file: current()?.document?.path ?? null,
       files: [...documents.values()].flatMap(record => record.document ? [record.document.path] : []) });
-  } catch { send('document:error', 'Slate could not remember this workspace. Your documents are still available to edit and save.'); }
+  } catch {
+    const message = 'Slate could not remember this workspace. Your documents are still available to edit and save.';
+    if (reportError) send('document:error', message);
+    return message;
+  }
 }
 async function activate(record, announce = true, replace = false) {
   activeId = record.id;
   updateWindow();
   if (record.document) app.addRecentDocument(record.document.path);
+  // A displayed tab must be ready for the next command, not still saving its session under the operation lock.
+  const notice = await rememberSession(false);
   if (announce) send('document:loaded', snapshot(replace ? record.id : undefined));
-  await rememberSession();
+  if (notice) send('document:error', notice);
 }
 async function mayCloseDocument(record) {
   if (!record.dirty) return true;

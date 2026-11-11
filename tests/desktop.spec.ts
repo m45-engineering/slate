@@ -21,15 +21,22 @@ async function launch(target?: string) {
   application.once('close', () => { applicationClosed = true; });
   page = await application.firstWindow();
   page.on('pageerror', error => rendererErrors.push(error.message));
-  // Exercise the real app without sending the user's keyboard input into test documents.
-  await application.evaluate(({ BrowserWindow }) => {
+  await application.evaluate(({ BrowserWindow }, ci) => {
     for (const window of BrowserWindow.getAllWindows()) {
-      window.hide();
-      window.show = () => {};
-      window.focus = () => {};
+      // The runner's display size and Windows frame must not change layout assertions.
+      window.setContentSize(1120, 800);
       window.webContents.setBackgroundThrottling(false);
+      // Keep CI windows drawable for screenshots; local tests must not take the user's focus.
+      if (ci) {
+        window.showInactive();
+        window.show = () => window.showInactive();
+      } else {
+        window.hide();
+        window.show = () => {};
+      }
+      window.focus = () => {};
     }
-  });
+  }, Boolean(process.env.CI));
 }
 
 async function restart(target?: string) {
@@ -331,7 +338,17 @@ test('discard confirmation uses shadcn and closes only the requested tab', async
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Unsaved edits\n');
+  // A slow settings write must not leave a newly displayed tab unable to accept Close.
+  await application.evaluate(() => {
+    const fs = process.getBuiltinModule('fs/promises');
+    const rename = fs.rename;
+    fs.rename = async (...args) => {
+      if (String(args[1]).endsWith('workspace.json')) await new Promise(resolve => setTimeout(resolve, 400));
+      return rename(...args);
+    };
+  });
   await page.getByRole('button', { name: 'next.md', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Next document' })).toBeVisible();
   await page.getByRole('button', { name: 'Close sample.md', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Save changes?' });
   await expect(dialog).toHaveAttribute('data-slot', 'dialog-content');
@@ -540,7 +557,8 @@ test('closing the window supports Cancel and Discard and clears discarded recove
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Discard this\n');
   await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
-  await Promise.all([page.waitForEvent('close'), dialog.getByRole('button', { name: 'Discard', exact: true }).click()]);
+  const closed = process.platform === 'darwin' ? page.waitForEvent('close') : application.waitForEvent('close');
+  await Promise.all([closed, dialog.getByRole('button', { name: 'Discard', exact: true }).click()]);
   expect(await readFile(file, 'utf8')).toBe(original);
   await restart();
   await expect(page.getByRole('heading', { name: 'A real document', exact: true })).toBeVisible();
@@ -600,7 +618,8 @@ test('closing an untitled document waits for Save As before closing the window',
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Saved on close\n');
   await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
   const dialog = page.getByRole('dialog', { name: 'Save changes?' });
-  await Promise.all([page.waitForEvent('close'), dialog.getByRole('button', { name: 'Save', exact: true }).click()]);
+  const closed = process.platform === 'darwin' ? page.waitForEvent('close') : application.waitForEvent('close');
+  await Promise.all([closed, dialog.getByRole('button', { name: 'Save', exact: true }).click()]);
   expect(await readFile(target, 'utf8')).toBe('# Saved on close\n');
 });
 
