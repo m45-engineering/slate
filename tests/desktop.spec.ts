@@ -19,22 +19,42 @@ async function launch(target?: string) {
   });
   applicationClosed = false;
   application.once('close', () => { applicationClosed = true; });
+  await application.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
   page = await application.firstWindow();
   page.on('pageerror', error => rendererErrors.push(error.message));
-  // Exercise the real app without sending the user's keyboard input into test documents.
-  await application.evaluate(({ BrowserWindow }) => {
+  await application.evaluate(({ BrowserWindow }, ci) => {
     for (const window of BrowserWindow.getAllWindows()) {
-      window.hide();
-      window.show = () => {};
-      window.focus = () => {};
+      // Set a starting window size; layout tests also set the browser viewport explicitly.
+      window.setContentSize(1120, 800);
       window.webContents.setBackgroundThrottling(false);
+      // CI exercises a normal foreground window, including native input and focus.
+      // Only local runs suppress focus to avoid taking the user's keyboard input.
+      if (ci) {
+        window.show();
+        window.focus();
+      } else {
+        window.hide();
+        window.show = () => {};
+        window.focus = () => {};
+      }
     }
-  });
+  }, Boolean(process.env.CI));
 }
 
 async function restart(target?: string) {
   if (!applicationClosed) await application.close();
   await launch(target);
+}
+
+async function delayWorkspaceWrites() {
+  await application.evaluate(() => {
+    const fs = process.getBuiltinModule('fs/promises');
+    const rename = fs.rename;
+    fs.rename = async (...args) => {
+      if (String(args[1]).endsWith('workspace.json')) await new Promise(resolve => setTimeout(resolve, 400));
+      return rename(...args);
+    };
+  });
 }
 
 test.beforeEach(async () => {
@@ -46,8 +66,22 @@ test.beforeEach(async () => {
   await expect(page.getByRole('heading', { name: 'A real document', exact: true })).toBeVisible();
 });
 
-test.afterEach(async () => {
+test.afterEach(async ({}, testInfo) => {
   if (application && !applicationClosed) {
+    const failed = testInfo.status !== testInfo.expectedStatus;
+    try {
+      if (failed && !page.isClosed()) {
+        await testInfo.attach('electron-page-state', {
+          body: await page.locator('body').ariaSnapshot({ timeout: 3000 }), contentType: 'text/plain',
+        });
+      }
+      const trace = failed ? testInfo.outputPath('electron-trace.zip') : undefined;
+      await application.context().tracing.stop(trace ? { path: trace } : undefined);
+      if (trace) await testInfo.attach('electron-trace', { path: trace, contentType: 'application/zip' });
+    } catch (error) {
+      // A crashed app may be unable to provide diagnostics; preserve the original failure.
+      await testInfo.attach('electron-diagnostics-error', { body: String(error), contentType: 'text/plain' });
+    }
     await application.evaluate(({ app }) => app.exit(0));
     await application.close();
   }
@@ -243,18 +277,26 @@ test('filename search opens a result from an unexpanded folder and clears back t
   await expect(page.locator('.titlebar')).not.toContainText('architecture.md');
 });
 
-test('document zoom uses percentages without enlarging the controls or changing the file', async () => {
-  const toolbar = page.locator('.titlebar');
-  const before = await toolbar.boundingBox();
-  expect((await page.locator('.document-editor').boundingBox())!.width).toBeGreaterThan(720);
-  await page.getByRole('button', { name: 'Document zoom' }).click();
-  await page.getByRole('menuitemradio', { name: '125%', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Document zoom' })).toHaveText('125%');
-  expect(await page.locator('.paper').evaluate(el => getComputedStyle(el).zoom)).toBe('1.25');
-  expect((await toolbar.boundingBox())!.height).toBe(before!.height);
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
-  expect(await readFile(file, 'utf8')).toBe(original);
-});
+for (const width of [1120, 980]) {
+  test(`document zoom uses percentages without enlarging the controls or changing the file (${width}px viewport)`, async () => {
+    // Native window sizes can be constrained by the CI desktop's display or scaling.
+    await page.setViewportSize({ width, height: 800 });
+    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width);
+    const toolbar = page.locator('.titlebar');
+    const before = await toolbar.boundingBox();
+    const available = (await page.locator('.document-scroll').boundingBox())!.width;
+    const editor = (await page.locator('.document-editor').boundingBox())!.width;
+    // Keep a wide reading column at both sizes, allowing space for its side padding.
+    expect(editor / available).toBeGreaterThan(0.8);
+    await page.getByRole('button', { name: 'Document zoom' }).click();
+    await page.getByRole('menuitemradio', { name: '125%', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Document zoom' })).toHaveText('125%');
+    expect(await page.locator('.paper').evaluate(el => getComputedStyle(el).zoom)).toBe('1.25');
+    expect((await toolbar.boundingBox())!.height).toBe(before!.height);
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    expect(await readFile(file, 'utf8')).toBe(original);
+  });
+}
 
 test('text styles use a shadcn menu with heading previews and preserve the edit selection', async () => {
   await page.getByRole('heading', { name: 'A real document', exact: true }).click();
@@ -331,7 +373,10 @@ test('discard confirmation uses shadcn and closes only the requested tab', async
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Unsaved edits\n');
+  // A slow settings write must not leave a newly displayed tab unable to accept Close.
+  await delayWorkspaceWrites();
   await page.getByRole('button', { name: 'next.md', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Next document' })).toBeVisible();
   await page.getByRole('button', { name: 'Close sample.md', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Save changes?' });
   await expect(dialog).toHaveAttribute('data-slot', 'dialog-content');
@@ -540,7 +585,8 @@ test('closing the window supports Cancel and Discard and clears discarded recove
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Discard this\n');
   await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
-  await Promise.all([page.waitForEvent('close'), dialog.getByRole('button', { name: 'Discard', exact: true }).click()]);
+  const closed = process.platform === 'darwin' ? page.waitForEvent('close') : application.waitForEvent('close');
+  await Promise.all([closed, dialog.getByRole('button', { name: 'Discard', exact: true }).click()]);
   expect(await readFile(file, 'utf8')).toBe(original);
   await restart();
   await expect(page.getByRole('heading', { name: 'A real document', exact: true })).toBeVisible();
@@ -600,7 +646,8 @@ test('closing an untitled document waits for Save As before closing the window',
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Saved on close\n');
   await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
   const dialog = page.getByRole('dialog', { name: 'Save changes?' });
-  await Promise.all([page.waitForEvent('close'), dialog.getByRole('button', { name: 'Save', exact: true }).click()]);
+  const closed = process.platform === 'darwin' ? page.waitForEvent('close') : application.waitForEvent('close');
+  await Promise.all([closed, dialog.getByRole('button', { name: 'Save', exact: true }).click()]);
   expect(await readFile(target, 'utf8')).toBe('# Saved on close\n');
 });
 
@@ -666,6 +713,9 @@ test('dragging tabs changes their order and restores that order on restart', asy
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   for (const name of ['second.md', 'third.md']) await page.getByRole('button', { name, exact: true }).click();
   const tablist = page.getByRole('tablist', { name: 'Open documents' });
+  await expect(tablist.getByRole('tab')).toHaveText(['sample.md', 'second.md', 'third.md']);
+  // Restart immediately after the displayed reorder, even when saving the order is slow.
+  await delayWorkspaceWrites();
   await tablist.getByRole('tab', { name: 'third.md', exact: true }).dragTo(tablist.getByRole('tab', { name: 'sample.md', exact: true }), { targetPosition: { x: 3, y: 10 } });
   await expect(tablist.getByRole('tab')).toHaveText(['third.md', 'sample.md', 'second.md']);
   await expect(tablist.getByRole('tab', { name: 'third.md', exact: true })).toHaveAttribute('aria-selected', 'true');
