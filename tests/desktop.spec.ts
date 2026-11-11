@@ -23,7 +23,7 @@ async function launch(target?: string) {
   page.on('pageerror', error => rendererErrors.push(error.message));
   await application.evaluate(({ BrowserWindow }, ci) => {
     for (const window of BrowserWindow.getAllWindows()) {
-      // The runner's display size and Windows frame must not change layout assertions.
+      // Set a starting window size; layout tests also set the browser viewport explicitly.
       window.setContentSize(1120, 800);
       window.webContents.setBackgroundThrottling(false);
       // Keep CI windows drawable for screenshots; local tests must not take the user's focus.
@@ -250,18 +250,26 @@ test('filename search opens a result from an unexpanded folder and clears back t
   await expect(page.locator('.titlebar')).not.toContainText('architecture.md');
 });
 
-test('document zoom uses percentages without enlarging the controls or changing the file', async () => {
-  const toolbar = page.locator('.titlebar');
-  const before = await toolbar.boundingBox();
-  expect((await page.locator('.document-editor').boundingBox())!.width).toBeGreaterThan(720);
-  await page.getByRole('button', { name: 'Document zoom' }).click();
-  await page.getByRole('menuitemradio', { name: '125%', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Document zoom' })).toHaveText('125%');
-  expect(await page.locator('.paper').evaluate(el => getComputedStyle(el).zoom)).toBe('1.25');
-  expect((await toolbar.boundingBox())!.height).toBe(before!.height);
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
-  expect(await readFile(file, 'utf8')).toBe(original);
-});
+for (const width of [1120, 980]) {
+  test(`document zoom uses percentages without enlarging the controls or changing the file (${width}px viewport)`, async () => {
+    // Native window sizes can be constrained by the CI desktop's display or scaling.
+    await page.setViewportSize({ width, height: 800 });
+    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width);
+    const toolbar = page.locator('.titlebar');
+    const before = await toolbar.boundingBox();
+    const available = (await page.locator('.document-scroll').boundingBox())!.width;
+    const editor = (await page.locator('.document-editor').boundingBox())!.width;
+    // Keep a wide reading column at both sizes, allowing space for its side padding.
+    expect(editor / available).toBeGreaterThan(0.8);
+    await page.getByRole('button', { name: 'Document zoom' }).click();
+    await page.getByRole('menuitemradio', { name: '125%', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Document zoom' })).toHaveText('125%');
+    expect(await page.locator('.paper').evaluate(el => getComputedStyle(el).zoom)).toBe('1.25');
+    expect((await toolbar.boundingBox())!.height).toBe(before!.height);
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    expect(await readFile(file, 'utf8')).toBe(original);
+  });
+}
 
 test('text styles use a shadcn menu with heading previews and preserve the edit selection', async () => {
   await page.getByRole('heading', { name: 'A real document', exact: true }).click();
