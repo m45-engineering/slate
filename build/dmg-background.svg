@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="420" viewBox="0 0 660 420">
+  <rect width="660" height="420" fill="#ffffff"/>
+  <text x="330" y="64" text-anchor="middle" font-family="Helvetica Neue,Arial,sans-serif" font-size="30" font-weight="500" fill="#181818">Slate</text>
+  <path d="M291 207h78m-15-15 15 15-15 15" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="330" y="351" text-anchor="middle" font-family="Helvetica Neue,Arial,sans-serif" font-size="16" fill="#181818">Drag Slate to Applications</text>
+  <text x="330" y="381" text-anchor="middle" font-family="Helvetica Neue,Arial,sans-serif" font-size="12" fill="#525252">M45 Engineering</text>
+</svg>
