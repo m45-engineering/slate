@@ -594,6 +594,38 @@ test('sidebar has readable labels and resizes without adding a menu border', asy
   expect(await menu.evaluate(el => getComputedStyle(el).outlineStyle)).toBe('none');
 });
 
+test('sidebar keeps project controls and file search visible while browsing long lists', async () => {
+  await Promise.all(Array.from({ length: 60 }, (_, i) => writeFile(path.join(directory, `note-${String(i).padStart(2, '0')}.md`), `# Note ${i}\n`)));
+  await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
+  const sidebar = page.getByLabel('Workspace sidebar', { exact: true });
+  const scroller = sidebar.locator('.folder-sidebar-content');
+  const search = sidebar.getByRole('textbox', { name: 'Find file by name' });
+  const controls = [sidebar.getByRole('tab', { name: 'Files', exact: true }), sidebar.getByLabel('Workspace folder', { exact: true }), search];
+  const positions = await Promise.all(controls.map(async control => (await control.boundingBox())!.y));
+  await expect(sidebar.getByRole('button', { name: 'note-59.md', exact: true })).toBeAttached();
+  for (const filtered of [false, true]) {
+    if (filtered) {
+      await search.fill('note-');
+      await expect(sidebar.getByText('60 files', { exact: true })).toBeVisible();
+    }
+    await scroller.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    expect(await scroller.evaluate(element => element.scrollTop)).toBeGreaterThan(300);
+    for (const [i, control] of controls.entries()) {
+      expect(Math.abs((await control.boundingBox())!.y - positions[i])).toBeLessThan(1);
+    }
+    await expect(sidebar.getByRole('button', { name: 'New file', exact: true })).toBeInViewport();
+    await expect(sidebar.getByRole('button', { name: 'New folder', exact: true })).toBeInViewport();
+    await expect(sidebar.getByRole('button', { name: 'Refresh folder', exact: true })).toBeInViewport();
+    await search.click();
+    await expect(search).toBeFocused();
+  }
+  await sidebar.screenshot({ path: 'tmp/slate-sticky-file-search.png' });
+  await sidebar.getByRole('button', { name: 'Clear file search' }).click();
+  await expect(search).toHaveValue('');
+  await sidebar.getByRole('tab', { name: 'Outline', exact: true }).click();
+  await expect(sidebar.getByRole('navigation', { name: 'Document outline' })).toContainText('A real document');
+});
+
 test('filename search opens a result from an unexpanded folder and clears back to the tree', async () => {
   await mkdir(path.join(directory, 'designs'));
   await writeFile(path.join(directory, 'designs', 'architecture.md'), '# Architecture\n');

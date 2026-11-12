@@ -268,12 +268,14 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
       <SidebarContent className="folder-sidebar-content">
         <TabsContent value="files" className="folder-tab">
           {folder ? <>
-            <div className="folder-heading" {...dropProps('', drag)} aria-label="Workspace folder"><TooltipHint content={folder.path} side="right"><span>{folder.name}</span></TooltipHint><div className="folder-heading-actions">
-              <TooltipHint content="New file" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="New file" onClick={() => beginCreate('new-file')}><FilePlus /></Button></TooltipHint>
-              <TooltipHint content="New folder" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="New folder" onClick={() => beginCreate('new-folder')}><FolderPlus /></Button></TooltipHint>
-              <TooltipHint content="Refresh folder" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="Refresh folder" onClick={() => setRefreshKey(value => value + 1)}><RefreshCw /></Button></TooltipHint>
-            </div></div>
-            <div className="file-search"><Search size={14} /><Input aria-label="Find file by name" placeholder="Find a file…" value={query} maxLength={200} onChange={event => setQuery(event.target.value)} />{query && <Button variant="ghost" size="icon" className="clear-search" aria-label="Clear file search" onClick={() => setQuery('')}><X size={13} /></Button>}</div>
+            <div className="folder-controls">
+              <div className="folder-heading" {...dropProps('', drag)} aria-label="Workspace folder"><TooltipHint content={folder.path} side="right"><span>{folder.name}</span></TooltipHint><div className="folder-heading-actions">
+                <TooltipHint content="New file" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="New file" onClick={() => beginCreate('new-file')}><FilePlus /></Button></TooltipHint>
+                <TooltipHint content="New folder" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="New folder" onClick={() => beginCreate('new-folder')}><FolderPlus /></Button></TooltipHint>
+                <TooltipHint content="Refresh folder" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="Refresh folder" onClick={() => setRefreshKey(value => value + 1)}><RefreshCw /></Button></TooltipHint>
+              </div></div>
+              <div className="file-search"><Search size={14} /><Input aria-label="Find file by name" placeholder="Find a file…" value={query} maxLength={200} onChange={event => setQuery(event.target.value)} />{query && <Button variant="ghost" size="icon" className="clear-search" aria-label="Clear file search" onClick={() => setQuery('')}><X size={13} /></Button>}</div>
+            </div>
             {query.trim() ? <div aria-live="polite" className="file-search-results">
               {!results ? <p className="tree-hint">Searching…</p> : results.error ? <p className="tree-hint">{results.error}</p> : <>
                 <p className="tree-hint search-count">{results.total ? `${results.total} ${results.total === 1 ? 'file' : 'files'}${results.total > 100 ? ' · showing first 100' : ''}` : 'No matching files'}</p>

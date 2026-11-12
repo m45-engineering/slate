@@ -76,6 +76,7 @@ button svg { flex-shrink: 0; }
 .sidebar-tab-list > button[data-state='active'] { color: var(--ui-text); background: transparent; }
 .folder-sidebar-content { overflow-y: auto; gap: 0; scrollbar-width: thin; }
 .folder-tab, .outline-tab { margin: 0; }
+.folder-controls { position: sticky; top: 0; z-index: 1; display: flow-root; background: var(--ui-background); }
 .folder-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 12px; gap: 8px; font-size: 13px; font-weight: 550; }
 .folder-heading-actions { display: flex; flex-shrink: 0; gap: 1px; }
 .folder-heading > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
