@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 - 2026-11-12
 
 - Add find and replace in Visual, Markdown, and source views, with highlighted matches, next/previous navigation, match-case, Replace All, and undo.
 - Make Mermaid diagrams preview-only in Visual view; edit their source in Markdown view.
 - Strengthen source-code highlighting colors and remove the extra source-toolbar tagline.
+- Keep file search and workspace controls visible while scrolling the sidebar.
 
 ## 0.1.1 - 2026-11-12
 

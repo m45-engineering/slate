@@ -10,7 +10,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-0.1.1-mac-arm64.dmg` from the [v0.1.1 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.1). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-0.1.2-mac-arm64.dmg` from the [v0.1.2 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.2). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -20,13 +20,13 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-0.1.1-win-x64.exe` from the [v0.1.1 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.1) for a standard Intel/AMD PC.
+1. Download `Slate-0.1.2-win-x64.exe` from the [v0.1.2 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.2) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Both installers are available in the v0.1.1 release. They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
+Both installers are available in the v0.1.2 release. They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
 
 ## Features
 
