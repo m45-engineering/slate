@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('slate', {
   open: () => ipcRenderer.invoke('document:open'),
   newDocument: (draft) => ipcRenderer.invoke('document:new', draft),
   save: (content, saveAs, options) => ipcRenderer.invoke('document:save', content, saveAs, options),
+  exportPdf: (content, id) => ipcRenderer.invoke('document:export-pdf', content, id),
   activateTab: (id) => ipcRenderer.invoke('document:activate', id),
   closeTab: (id) => ipcRenderer.invoke('document:close', id),
   closeTabs: (ids, keepId) => ipcRenderer.invoke('document:close-many', ids, keepId),

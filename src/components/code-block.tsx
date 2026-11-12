@@ -12,6 +12,7 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeViewProps
   const [editing, setEditing] = useState(!node.textContent);
   const [svg, setSvg] = useState('');
   const [error, setError] = useState('');
+  const [renderedSource, setRenderedSource] = useState<string | null>(null);
   const id = useId().replace(/[^a-zA-Z0-9]/g, '');
   const renderSequence = useRef(0);
 
@@ -21,22 +22,24 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeViewProps
     const timer = setTimeout(async () => {
       try {
         const { default: mermaid } = await import('mermaid');
+        await document.fonts.ready;
         mermaid.initialize({
           startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true,
-          theme: 'base', fontFamily: 'Geist, sans-serif',
+          theme: 'base', fontFamily: getComputedStyle(editor.view.dom).fontFamily,
+          htmlLabels: editor.isEditable,
           themeVariables: { primaryColor: '#f7f7f7', primaryTextColor: '#181818', primaryBorderColor: '#d4d4d4', lineColor: '#858585', fontSize: '14px' },
         });
         // Mermaid removes existing DOM elements with the render ID. Keep the visible SVG intact.
         const result = await mermaid.render(`diagram${id}-${++renderSequence.current}`, node.textContent);
-        if (!canceled) { setSvg(result.svg); setError(''); }
+        if (!canceled) { setSvg(result.svg); setError(''); setRenderedSource(node.textContent); }
       } catch {
-        if (!canceled) setError('The Mermaid source is incomplete or invalid.');
+        if (!canceled) { setError('The Mermaid source is incomplete or invalid.'); setRenderedSource(node.textContent); }
       }
     }, 300);
     return () => { canceled = true; clearTimeout(timer); };
-  }, [id, isMermaid, node.textContent]);
+  }, [editor, id, isMermaid, node.textContent]);
 
-  return <NodeViewWrapper className={`code-block ${isMermaid ? 'mermaid-block' : ''}`}>
+  return <NodeViewWrapper className={`code-block ${isMermaid ? 'mermaid-block' : ''}`} data-mermaid-status={isMermaid ? renderedSource === node.textContent ? error ? 'error' : 'ready' : 'pending' : undefined}>
     <div className="code-header" contentEditable={false}>
       {isMermaid ? <span className="code-label">Mermaid diagram</span> : <Input
         aria-label="Code language" placeholder="plain text" value={node.attrs.language || ''}

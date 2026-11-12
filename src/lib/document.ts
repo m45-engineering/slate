@@ -14,6 +14,7 @@ export interface DesktopBridge {
   open(): Promise<FileResult>;
   newDocument(draft?: { name: string; content: string }): Promise<FileResult>;
   save(content: string, saveAs: boolean, options?: { id?: string; path: string | null; confirmationId?: number }): Promise<FileResult>;
+  exportPdf(content: string, id: string): Promise<{ path?: string; canceled?: boolean; error?: string }>;
   activateTab(id: string): Promise<void>;
   closeTab(id: string): Promise<{ canceled?: boolean }>;
   closeTabs(ids: string[], keepId?: string): Promise<{ canceled?: boolean } | void>;
@@ -38,7 +39,10 @@ export interface DesktopBridge {
   onFolder(callback: (folder: LocalFolder) => void): () => void;
 }
 
-declare global { interface Window { slate?: DesktopBridge } }
+declare global { interface Window {
+  slate?: DesktopBridge;
+  slatePdf?: { document(): Promise<{ name: string; content: string }>; ready(error?: string): void };
+} }
 
 export const EMPTY_DOCUMENT: SlateDocument = { id: 'initial', path: null, name: 'Untitled.md', content: '' };
 

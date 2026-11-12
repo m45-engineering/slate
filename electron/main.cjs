@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { readDocument, writeDocument, diskMatches, MAX_BYTES } = require('./file-store.cjs');
-const { isTextFile, TEXT_EXTENSIONS } = require('./file-types.cjs');
+const { isTextFile, isMarkdown, TEXT_EXTENSIONS } = require('./file-types.cjs');
+const { exportPdf } = require('./pdf-export.cjs');
 const { FolderStore } = require('./folder-store.cjs');
 const { SessionStore } = require('./session-store.cjs');
 
@@ -58,6 +59,8 @@ function updateWindow() {
   window?.setTitle(record ? `${record.name} — Slate` : 'Slate');
   const saveItem = Menu.getApplicationMenu()?.getMenuItemById('save-document');
   if (saveItem) saveItem.enabled = Boolean(record?.dirty);
+  const exportItem = Menu.getApplicationMenu()?.getMenuItemById('export-pdf');
+  if (exportItem) exportItem.enabled = Boolean(record && isMarkdown(record.name));
 }
 function setDirty(id, value) {
   const record = documents.get(id);
@@ -418,6 +421,13 @@ handle('document:save', async (content, saveAs, options) => {
   return exclusive(() => saveDocument(content, saveAs, options));
 });
 ipcMain.on('document:dirty', (event, id, value) => { if (trusted(event)) setDirty(id, value === true); });
+handle('document:export-pdf', (content, id) => exclusive(async () => {
+  const record = current();
+  if (!record || id !== record.id || !isMarkdown(record.name)) throw new Error('Select a Markdown document to export.');
+  if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > MAX_BYTES || content.includes('\0')) throw new Error('Invalid Markdown content.');
+  return exportPdf({ parent: window, name: record.name, content, documentPath: record.document?.path,
+    url: development ? `${process.env.SLATE_DEV_URL}/pdf` : 'slate-app://app/pdf.html' });
+}, true));
 
 function command(value) { send('document:command', value); }
 function createMenu() {
@@ -428,6 +438,7 @@ function createMenu() {
     { type: 'separator' },
     { id: 'save-document', label: 'Save', enabled: Boolean(current()?.dirty), accelerator: 'CmdOrCtrl+S', click: () => command('save') },
     { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => command('save-as') },
+    { id: 'export-pdf', label: 'Export PDF…', enabled: Boolean(current() && isMarkdown(current().name)), click: () => command('export-pdf') },
     { type: 'separator' }, { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => command('close-tab') },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate([
@@ -439,7 +450,7 @@ function createMenu() {
     ] }] : []),
     { label: 'File', submenu: fileMenu }, { role: 'editMenu' },
     { label: 'View', submenu: [
-      { label: 'Toggle Markdown', accelerator: 'CmdOrCtrl+Shift+M', click: () => command('toggle-mode') },
+      { id: 'toggle-editor-view', label: 'Toggle Visual / Markdown', click: () => command('toggle-mode') },
       { type: 'separator' },
       { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => command('zoom-reset') },
       { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => command('zoom-in') },

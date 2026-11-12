@@ -1,0 +1,29 @@
+@page { size: A4; }
+@page diagram-landscape { size: A4 landscape; margin: 18mm; }
+
+html:has(.pdf-document), body:has(.pdf-document) { height: auto; overflow: visible; background: white; }
+.pdf-document { color: #181818; background: white; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.pdf-document:has(.pdf-output .document-editor) .pdf-render-source { display: none; }
+.pdf-document .document-editor { font-size: 11pt; line-height: 1.6; min-height: 0; }
+.pdf-document .document-editor > :is(p, ul, ol, blockquote) { max-width: none; }
+.pdf-document .document-editor :is(h1, h2, h3, h4, h5, h6) { break-after: avoid; }
+.pdf-document .document-editor :is(p, li) { orphans: 3; widows: 3; }
+.pdf-document .document-editor a { color: #1d4ed8; }
+.pdf-document .document-editor table { font-size: 10pt; overflow: visible; }
+.pdf-document .document-editor thead { display: table-header-group; }
+.pdf-document .document-editor tr { break-inside: avoid; }
+.pdf-document .document-editor th, .pdf-document .document-editor td { overflow-wrap: anywhere; }
+.pdf-document .code-header, .pdf-document .mermaid-source { display: none; }
+.pdf-document .code-block { overflow: visible; border-radius: 0; }
+.pdf-document .code-block pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; font-size: 9pt; }
+.pdf-document .mermaid-block { break-inside: avoid; background: white; }
+.pdf-document .pdf-figure { break-inside: avoid; }
+.pdf-document .pdf-figure > :is(h1, h2, h3, h4, h5, h6) { margin-top: 0; }
+.pdf-document .pdf-figure .diagram-preview svg { max-height: 210mm; }
+.pdf-document .pdf-landscape { page: diagram-landscape; }
+.pdf-document .pdf-landscape .mermaid-block { margin: 0; }
+.pdf-document .pdf-landscape .diagram-preview svg { max-height: 140mm; }
+.pdf-document .diagram-preview { padding: 8px 0; overflow: visible; }
+.pdf-document .diagram-preview svg { display: block; width: 100%; height: auto; max-height: 235mm; margin: auto; }
+.pdf-document .task-checkbox { padding-top: 4px; }
+.pdf-document .task-checkbox button { opacity: 1; }

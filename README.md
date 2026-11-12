@@ -10,7 +10,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-0.1.0-mac-arm64.dmg` from the [v0.1.0 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.0). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-0.1.1-mac-arm64.dmg` from the [v0.1.1 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.1). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -20,15 +20,15 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-0.1.0-win-x64.exe` from the [v0.1.0 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.0) for a standard Intel/AMD PC.
+1. Download `Slate-0.1.1-win-x64.exe` from the [v0.1.1 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.1) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Both installers are available in the v0.1.0 release. They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
+Both installers are available in the v0.1.1 release. They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
 
-## First version
+## Features
 
 - Visual editing and raw Markdown, with a document outline.
 - A resizable shadcn folder sidebar with lazy directory browsing, live filename search, current-file highlighting, and an Outline tab. Markdown opens in the visual editor; text and code open in the source editor. Binary files remain visible for context.
@@ -42,6 +42,7 @@ Both installers are available in the v0.1.0 release. They contain the code from 
 - A wider visual document area and document zoom from 75% to 200%, without scaling the application controls.
 - Headings, bold, italic, strikethrough, links, lists, checkboxes, and quotes.
 - Editable Markdown tables, fenced code blocks, and Mermaid diagrams with source editing and live previews.
+- Local PDF export for Markdown, including Mermaid diagrams, tables, task lists, clickable web links, and page numbers.
 - Native Open, Save, Save As, keyboard shortcuts, and `.md` / `.markdown` file associations.
 - Explicit Save only: edits do not change the file on disk until Save or ⌘S / Ctrl+S. Save is active only while changes are pending; new documents need an initial Save to choose a filename. Closing a dirty tab, reloading, closing the window, or quitting offers Save / Discard / Cancel. Quitting and bulk close actions check each dirty tab separately; Cancel stops the remaining closes.
 - Detection of changes made by other editors, with Reload and Save a copy actions.
@@ -110,7 +111,6 @@ The application reuses its existing window. Opening another document adds a tab,
 | Save As | ⌘⇧S | Ctrl+Shift+S |
 | Close tab | ⌘W | Ctrl+W |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Ctrl+Tab / Ctrl+Shift+Tab |
-| Toggle Markdown | ⌘⇧M | Ctrl+Shift+M |
 | Bold / italic | ⌘B / ⌘I | Ctrl+B / Ctrl+I |
 
 ## Build installers
@@ -140,7 +140,15 @@ Opening, switching views, and saving without edits preserve the original file by
 
 This version deliberately keeps YAML/TOML front matter, HTML, images, reference definitions, footnotes, and math in source mode. It does not claim lossless visual editing for every Markdown dialect. The source-mode guard covers these known unsupported forms; other custom Markdown extensions may also require source editing. Tiptap's Markdown extension is currently beta.
 
-Mermaid uses strict rendering. Code is displayed, never executed. Links can be edited, but the document surface does not navigate when clicked. Remote images and embedded HTML are not rendered. File operations are restricted to the document selected through the OS or native file dialog.
+Mermaid uses strict rendering. Code is displayed, never executed. Web links are blue and open in the default browser when clicked. Remote images and embedded HTML are not rendered. File operations are restricted to the document selected through the OS or native file dialog.
+
+### Export a PDF
+
+Choose **Export PDF** in the toolbar or **File → Export PDF…**, then choose where to save it. Export uses the current document, including unsaved edits, without saving or changing the Markdown file. It works from either Visual or Markdown view.
+
+PDFs are rendered entirely on your computer using Slate's bundled Chromium and fonts. They include A4 pages, page numbers, selectable text, clickable web links, and rendered Mermaid diagrams. Wide diagrams receive a landscape page when that improves readability. Editor controls and source-editing fields are omitted. An invalid diagram stops export instead of silently producing a missing or outdated figure.
+
+Export supports the same Markdown content as Visual view. The source-only constructs listed above are rejected explicitly so they cannot silently disappear. Custom headers, a generated table of contents, and Word export are not included.
 
 Saving compares the file with the version Slate opened. If another tool changed or deleted it, Slate refuses to overwrite it. Writes use a temporary sibling file and rename; this reduces partial-write risk. This is not a distributed lock: a write by another process in the tiny interval between the final comparison and rename can still race. Use Git for version history and coordinated review.
 
@@ -156,7 +164,7 @@ pnpm build       # static production export
 pnpm test:e2e    # launch Electron; requires a desktop session
 ```
 
-[Desktop tests](tests/desktop.spec.ts) exercise the actual exported app, including native file loading, Markdown round trips, source editing and explicit saving, Save / Discard / Cancel, draft recovery, session restore, table editing, Mermaid rendering, and external changes. [File tests](tests/file-store.test.cjs) cover byte preservation, line endings, conflicts, and invalid files.
+[Desktop tests](tests/desktop.spec.ts) exercise the actual exported app, including native file loading, Markdown round trips, source editing and explicit saving, Save / Discard / Cancel, draft recovery, session restore, table editing, Mermaid rendering, PDF export, web links, and external changes. [File tests](tests/file-store.test.cjs) cover byte preservation, line endings, conflicts, and invalid files.
 
 ## License
 
@@ -193,4 +201,4 @@ All visible application controls use these shared components: buttons, text inpu
 
 Keep M45 colors and typography in `src/app/globals.css`: near-black text, readable secondary text, white surfaces, restrained hover backgrounds, and explicit keyboard focus. Avoid native `title` tooltips, browser confirmation dialogs, decorative borders, and per-control gray overrides. Heading previews share the document's type-size tokens. The desktop tests check component usage, minimum 4.5:1 text contrast for enabled buttons, keyboard focus, and confirmation behavior.
 
-Current scope is a focused local editor. Collaboration, Git operations, PDF/Word export, plugins, and cloud sync are not part of this version.
+Current scope is a focused local editor. Collaboration, Git operations, Word export, plugins, and cloud sync are not part of this version.

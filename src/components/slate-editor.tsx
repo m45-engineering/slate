@@ -3,15 +3,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EditorState } from '@tiptap/pm/state';
 import { EditorContent, useEditor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { TableKit } from '@tiptap/extension-table';
-import TaskList from '@tiptap/extension-task-list';
-import { Markdown } from '@tiptap/markdown';
+import { documentExtensions } from '@/lib/editor-extensions';
 import { EMPTY_DOCUMENT, isMarkdown, isTextFile, fileLabel, sourceOnlyReason, type SlateDocument, type WorkspaceDocuments, type LocalFolder } from '@/lib/document';
 import { Icon, type IconName } from './icon';
-import { SlateCodeBlock } from './code-block';
-import { SlateTaskItem } from './task-item';
 import { DocumentTabs } from './document-tabs';
 import { FolderSidebar } from './folder-sidebar';
 import { SidebarProvider } from './ui/sidebar';
@@ -67,6 +62,8 @@ export function SlateEditor() {
   }, []);
   const [diskChanged, setDiskChanged] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportingRef = useRef(false);
   const savingRef = useRef(false);
   const recoveryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const documentVersion = useRef(0);
@@ -127,11 +124,8 @@ export function SlateEditor() {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ codeBlock: false, underline: false, link: { openOnClick: false, autolink: false } }),
-      SlateCodeBlock, TableKit.configure({ table: { resizable: false } }),
-      TaskList, SlateTaskItem,
+      ...documentExtensions(),
       Placeholder.configure({ placeholder: 'Start writing. Make room for an idea…' }),
-      Markdown,
     ],
     content: EMPTY_DOCUMENT.content,
     contentType: 'markdown',
@@ -275,6 +269,22 @@ export function SlateEditor() {
     } finally { savingRef.current = false; setSaving(false); }
   }, [clearRecovery]);
 
+  const exportPdf = useCallback(async () => {
+    if (!window.slate || exportingRef.current || !isMarkdown(docRef.current.name)) return;
+    const reason = sourceOnlyReason(sourceRef.current);
+    if (reason) { setNotice(`PDF export cannot yet render ${reason}. The Markdown file has not been changed.`); return; }
+    exportingRef.current = true;
+    setExporting(true);
+    setNotice('');
+    try {
+      const result = await window.slate.exportPdf(sourceRef.current, docRef.current.id);
+      if (result.error) setNotice(`PDF export failed. ${result.error}`);
+      else if (result.path) setNotice(`PDF saved to ${result.path}`);
+    } catch (error) {
+      setNotice(`PDF export failed. ${error instanceof Error ? error.message : 'Please try again.'}`);
+    } finally { exportingRef.current = false; setExporting(false); }
+  }, []);
+
   const confirmUnsavedChanges = useCallback((requestId?: number) => requestConfirmation({
     title: 'Save changes?',
     description: `Save your changes to ${docRef.current.name} before continuing?`,
@@ -390,6 +400,7 @@ export function SlateEditor() {
       }
       if (command === 'close-tab') void closeTab(docRef.current.id);
       if (command === 'toggle-mode') switchMode();
+      if (command === 'export-pdf' && !confirmation) void exportPdf();
       if (command === 'open-folder') void openFolder();
       if (command === 'zoom-in') zoomDocument('in');
       if (command === 'zoom-out') zoomDocument('out');
@@ -414,7 +425,6 @@ export function SlateEditor() {
       if (window.slate) return;
       if (event.key.toLowerCase() === 'o') { event.preventDefault(); void open(); }
       if (event.key.toLowerCase() === 'n') { event.preventDefault(); void newDocument(); }
-      if (event.key.toLowerCase() === 'm' && event.shiftKey) { event.preventDefault(); switchMode(); }
       if (event.key === '+' || event.key === '=') { event.preventDefault(); zoomDocument('in'); }
       if (event.key === '-') { event.preventDefault(); zoomDocument('out'); }
       if (event.key === '0') { event.preventDefault(); zoomDocument('reset'); }
@@ -424,7 +434,7 @@ export function SlateEditor() {
     };
     window.addEventListener('keydown', keyboard); window.addEventListener('beforeunload', beforeUnload);
     return () => { unsubscribe?.(); window.removeEventListener('keydown', keyboard); window.removeEventListener('beforeunload', beforeUnload); };
-  }, [save, open, openFolder, newDocument, switchMode, zoomDocument, confirmation?.allowSave, saveBeforeContinuing, closeTab, selectTab]);
+  }, [save, open, openFolder, newDocument, switchMode, zoomDocument, confirmation, saveBeforeContinuing, closeTab, selectTab, exportPdf]);
 
   const headings: Heading[] = [];
   if (mode === 'visual') {
@@ -460,6 +470,7 @@ export function SlateEditor() {
       <div className="brand"><Tool label="Toggle sidebar" icon="panel" active={outlineOpen} onClick={() => setOutlineOpen(!outlineOpen)} /><span>Slate</span></div>
       <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{markdownDocument && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>
       <div className="file-actions">
+        {desktop && markdownDocument && <TooltipHint content={exporting ? 'Exporting PDF…' : 'Export PDF'}><Button variant="ghost" className="text-button export-button" aria-label={exporting ? 'Exporting PDF' : 'Export PDF'} disabled={exporting || saving} onClick={() => void exportPdf()}><Icon name="file" /><span>{exporting ? 'Exporting…' : 'Export PDF'}</span></Button></TooltipHint>}
         <TooltipHint content={`New document (${isMac ? '⌘' : 'Ctrl+'}N)`}><Button variant="ghost" className="text-button" onClick={() => void newDocument()}><Icon name="plus" /><span>New</span></Button></TooltipHint>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="text-button"><Icon name="open" /><span>Open</span><Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => void open()}>Open file…</DropdownMenuItem><DropdownMenuItem onSelect={() => void openFolder()}>Open folder…</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
         <Button className="save-button" onClick={() => void save()} disabled={saving || !dirty}><Icon name={saving ? 'more' : 'save'} size={15} /><span>{desktop ? 'Save' : 'Download'}</span></Button>

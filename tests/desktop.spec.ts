@@ -174,6 +174,163 @@ test('Save stays disabled and view changes leave an unchanged file untouched', a
   expect(await readFile(file, 'utf8')).toBe(original);
 });
 
+test('web links are blue and open the default browser without navigating the editor', async () => {
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const markdown = '# Links\n\n[Secure site](https://example.com/docs) and [HTTP site](http://example.com/help).\n';
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill(markdown);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await application.evaluate(({ shell }) => {
+    Reflect.set(globalThis, 'documentLinksOpened', []);
+    shell.openExternal = async url => { Reflect.get(globalThis, 'documentLinksOpened').push(url); };
+  });
+  const editorUrl = page.url();
+  for (const name of ['Secure site', 'HTTP site']) {
+    const link = page.getByRole('link', { name, exact: true });
+    await expect(link).toHaveCSS('color', 'rgb(29, 78, 216)');
+    await link.click();
+  }
+  await expect.poll(() => application.evaluate(() => Reflect.get(globalThis, 'documentLinksOpened'))).toEqual(['https://example.com/docs', 'http://example.com/help']);
+  expect(page.url()).toBe(editorUrl);
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(markdown);
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('PDF export includes unsaved Markdown and Mermaid without changing the document or view', async () => {
+  const target = path.join(directory, 'export.pdf');
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+  }, target);
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  const markdown = '# Exported draft\n\n[Reference](https://example.com/pdf-reference)\n\n| Item | Status |\n| --- | --- |\n| PDF | Ready |\n\n- [x] Included task\n\n```mermaid\nflowchart LR\n  A[Write] --> B[Share PDF]\n```\n\n## Code\n\n```typescript\nconst message = "' + 'A long line '.repeat(30) + '";\n```\n\n' + Array.from({ length: 35 }, (_, i) => `Paragraph ${i + 1}: This content must remain readable across page breaks.`).join('\n\n') + '\n';
+  await source.fill(markdown);
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: `PDF saved to ${target}` })).toBeVisible({ timeout: 30_000 });
+  const pdf = await readFile(target);
+  expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+  expect(pdf.toString('latin1')).toContain('https://example.com/pdf-reference');
+  expect([...pdf.toString('latin1').matchAll(/\/Type \/Page\b/g)].length).toBeGreaterThan(1);
+  await writeFile('tmp/slate-pdf-export.pdf', pdf);
+  await expect(source).toHaveValue(markdown);
+  await expect(page.getByRole('tab', { name: 'Markdown', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  expect(await readFile(file, 'utf8')).toBe(original);
+  expect(application.windows()).toHaveLength(1);
+});
+
+test('PDF export cancels cleanly and refuses an invalid diagram without replacing a PDF', async () => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  const modeBounds = (await page.getByRole('tablist', { name: 'Editor view' }).boundingBox())!;
+  const actionBounds = (await page.locator('.file-actions').boundingBox())!;
+  expect(modeBounds.x + modeBounds.width).toBeLessThanOrEqual(actionBounds.x);
+  const target = path.join(directory, 'existing.pdf');
+  await writeFile(target, 'Existing PDF must survive');
+  await application.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => ({ canceled: true, filePath: '' }); });
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Export PDF', exact: true })).toBeEnabled();
+  expect(await readFile(target, 'utf8')).toBe('Existing PDF must survive');
+  await application.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, target);
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  await source.fill('# Invalid diagram\n\n```mermaid\nnot a valid diagram\n```\n');
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'A Mermaid diagram is invalid' })).toBeVisible({ timeout: 30_000 });
+  expect(await readFile(target, 'utf8')).toBe('Existing PDF must survive');
+  expect(application.windows()).toHaveLength(1);
+  await source.fill('# Retry succeeds\n');
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: `PDF saved to ${target}` })).toBeVisible({ timeout: 30_000 });
+  expect((await readFile(target)).subarray(0, 5).toString()).toBe('%PDF-');
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('PDF export fits wide and tall diagrams and paginates long tables', async () => {
+  const target = path.join(directory, 'diagrams.pdf');
+  await application.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, target);
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const wide = 'flowchart LR\n' + Array.from({ length: 8 }, (_, i) => `N${i}[Wide step ${i + 1}] --> N${i + 1}[Wide step ${i + 2}]`).join('\n');
+  const tall = 'flowchart TD\n' + Array.from({ length: 18 }, (_, i) => `T${i}[Tall step ${i + 1}] --> T${i + 1}[Tall step ${i + 2}]`).join('\n');
+  const table = '| Record | Description |\n| --- | --- |\n' + Array.from({ length: 65 }, (_, i) => `| ${i + 1} | Row ${i + 1} must be included |`).join('\n');
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill(`# Wide diagram\n\n\`\`\`mermaid\n${wide}\n\`\`\`\n\n## Tall diagram\n\n\`\`\`mermaid\n${tall}\n\`\`\`\n\n## Table\n\n${table}\n`);
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: `PDF saved to ${target}` })).toBeVisible({ timeout: 30_000 });
+  const pdf = await readFile(target);
+  expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+  await writeFile('tmp/slate-pdf-diagrams.pdf', pdf);
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('PDF export reports unsupported Markdown and file write failures without losing edits', async () => {
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  const unsupported = '---\ntitle: Metadata\n---\n\n# Preserve me\n';
+  await source.fill(unsupported);
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'PDF export cannot yet render YAML front matter' })).toBeVisible();
+  await expect(source).toHaveValue(unsupported);
+  await source.fill('# Preserve these unsaved edits\n');
+  await application.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, path.join(directory, 'missing-folder', 'export.pdf'));
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'PDF export failed' })).toBeVisible({ timeout: 30_000 });
+  await expect(source).toHaveValue('# Preserve these unsaved edits\n');
+  expect(application.windows()).toHaveLength(1);
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('View menu switches modes without a custom shortcut and preserves source-only content', async () => {
+  const accelerator = await application.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('toggle-editor-view')?.accelerator);
+  expect(accelerator).toBeNull();
+  const toggleView = () => application.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('toggle-editor-view')!.click());
+  await toggleView();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  await expect(source).toHaveValue(original);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await source.fill('# Edited through the menu\n');
+  await toggleView();
+  await expect(page.getByRole('heading', { name: 'Edited through the menu' })).toBeVisible();
+  await toggleView();
+  await expect(source).toHaveValue('# Edited through the menu\n');
+  await source.fill('---\ntitle: Keep this front matter\n---\n\n# Heading\n');
+  await toggleView();
+  await expect(source).toBeVisible();
+  await expect(source).toHaveValue('---\ntitle: Keep this front matter\n---\n\n# Heading\n');
+  await expect(page.getByRole('status').filter({ hasText: 'Keep this document in Markdown' })).toBeVisible();
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('visual headings have distinct sizes and spacing with matching menu previews', async () => {
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill(Array.from({ length: 6 }, (_, i) => `${'#'.repeat(i + 1)} Heading ${i + 1}\n\nBody text.`).join('\n\n') + '\n');
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  const headings = page.locator('.document-editor :is(h1, h2, h3, h4, h5, h6)');
+  const styles = await headings.evaluateAll(elements => elements.map(element => {
+    const style = getComputedStyle(element);
+    return { size: parseFloat(style.fontSize), weight: style.fontWeight, spacing: style.letterSpacing, italic: style.fontStyle, top: parseFloat(style.marginTop), bottom: parseFloat(style.marginBottom) };
+  }));
+  expect(styles).toHaveLength(6);
+  expect(styles[0].top).toBe(0);
+  for (let i = 1; i < styles.length; i++) {
+    expect(styles[i - 1].size).toBeGreaterThan(styles[i].size);
+    expect(styles[i - 1].bottom).toBeGreaterThan(styles[i].bottom);
+    expect(styles[i].top).toBeGreaterThan(styles[i].bottom);
+    if (i > 1) expect(styles[i - 1].top).toBeGreaterThan(styles[i].top);
+  }
+  expect(styles[5].italic).toBe('italic');
+  const gaps = await headings.evaluateAll(elements => elements.map(element => element.nextElementSibling!.getBoundingClientRect().top - element.getBoundingClientRect().bottom));
+  for (let i = 0; i < styles.length; i++) expect(gaps[i]).toBeCloseTo(styles[i].bottom, 0);
+  await expect(page.locator('.document-editor > p').first()).toHaveCSS('font-size', '15px');
+  await page.screenshot({ path: 'tmp/slate-heading-hierarchy.png', fullPage: true });
+  await page.getByRole('button', { name: 'Text style' }).click();
+  for (let i = 0; i < styles.length; i++) {
+    const preview = page.getByRole('menu').getByText(`Heading ${i + 1}`, { exact: true });
+    await expect(preview).toHaveCSS('font-size', `${styles[i].size}px`);
+    await expect(preview).toHaveCSS('font-weight', styles[i].weight);
+    await expect(preview).toHaveCSS('font-style', styles[i].italic);
+    await expect(preview).toHaveCSS('letter-spacing', styles[i].spacing);
+  }
+});
+
 test('existing files stay unchanged until explicitly saved', async () => {
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   const source = page.getByRole('textbox', { name: 'Markdown source' });
@@ -593,9 +750,11 @@ test('source files open from search, save exactly, and restore on restart', asyn
   const source = page.getByRole('textbox', { name: 'Source editor', exact: true });
   await expect(source).toHaveValue(code);
   await expect(page.getByRole('tab', { name: 'Visual', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Export PDF', exact: true })).toHaveCount(0);
+  expect(await application.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('export-pdf')?.enabled)).toBe(false);
   await expect(page.getByRole('tab', { name: 'Source', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
-  await page.keyboard.press('ControlOrMeta+Shift+m');
+  await application.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('toggle-editor-view')!.click());
   await expect(source).toBeVisible();
   const updated = '// # Not a Markdown heading\n' + code + '\t// keep indentation  \n';
   await source.fill(updated);
