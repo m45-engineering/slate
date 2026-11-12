@@ -439,7 +439,6 @@ export function SlateEditor() {
       if (match) headings.push({ text: match[2], level: match[1].length, index });
     });
   }
-  const words = source.trim() ? source.trim().split(/\s+/).length : 0;
   const toolbarDisabled = mode !== 'visual' || !editor;
   const inTable = editor?.isActive('table') && !toolbarDisabled;
   void revision;
@@ -546,7 +545,13 @@ export function SlateEditor() {
       </ResizablePanel>
       </ResizablePanelGroup>
     </SidebarProvider>
-    <footer className="statusbar"><TooltipHint content={doc.path || doc.name} side="top"><span className="footer-document"><span>{doc.name}</span><span className="status-divider">·</span><span className="save-status">{saving ? 'Saving…' : dirty ? 'Unsaved changes' : doc.path ? 'Saved to file' : 'Not saved yet'}</span></span></TooltipHint><span>{markdownDocument ? <>{words.toLocaleString()} words<span className="status-divider">·</span>{Math.max(1, Math.ceil(words / 220))} min read</> : <>{source.split('\n').length.toLocaleString()} lines<span className="status-divider">·</span>{source.length.toLocaleString()} characters</>}</span><span>{language}<span className="status-divider">·</span><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="zoom-control" aria-label="Document zoom">{documentZoom}%<Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuRadioGroup value={String(documentZoom)} onValueChange={value => setDocumentZoom(Number(value))}>{ZOOM_LEVELS.map(value => <DropdownMenuRadioItem key={value} value={String(value)}>{value}%</DropdownMenuRadioItem>)}</DropdownMenuRadioGroup></DropdownMenuContent></DropdownMenu></span></footer>
+    <footer className="statusbar">
+      <div className="footer-links">
+        <Button asChild variant="ghost" className="footer-link"><a href="https://www.m45.engineering/" target="_blank" rel="noopener noreferrer">© 2026 by M45 Engineering Inc.</a></Button>
+        <TooltipHint content="Slate on GitHub" side="top"><Button asChild variant="ghost" size="icon" className="footer-github"><a href="https://github.com/m45-engineering/slate" target="_blank" rel="noopener noreferrer" aria-label="Slate on GitHub"><img src="/github-mark.svg" width="16" height="16" alt="" /></a></Button></TooltipHint>
+      </div>
+      <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="zoom-control" aria-label="Document zoom">{documentZoom}%<Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuRadioGroup value={String(documentZoom)} onValueChange={value => setDocumentZoom(Number(value))}>{ZOOM_LEVELS.map(value => <DropdownMenuRadioItem key={value} value={String(value)}>{value}%</DropdownMenuRadioItem>)}</DropdownMenuRadioGroup></DropdownMenuContent></DropdownMenu>
+    </footer>
     <input ref={fileInput} type="file" hidden onChange={async event => {
       const file = event.target.files?.[0]; event.target.value = '';
       if (!file) return;

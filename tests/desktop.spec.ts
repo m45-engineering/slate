@@ -98,13 +98,44 @@ test('runs as an isolated desktop app with a live Mermaid preview', async () => 
   await page.screenshot({ path: 'tmp/slate-desktop.png' });
 });
 
+test('footer contains company and repository links without document statistics', async () => {
+  const footer = page.locator('footer');
+  await expect(footer).toContainText('© 2026 by M45 Engineering Inc.');
+  await expect(footer).not.toContainText('sample.md');
+  await expect(footer).not.toContainText(/Saved to file|Unsaved changes|Not saved yet|\bwords\b|\bmin read\b|\bcharacters\b/);
+  await expect(footer.getByRole('button', { name: 'Document zoom' })).toHaveText('100%');
+  const website = footer.getByRole('link', { name: '© 2026 by M45 Engineering Inc.', exact: true });
+  const github = footer.getByRole('link', { name: 'Slate on GitHub' });
+  await expect(footer).not.toContainText('www.m45.engineering');
+  const footerBounds = (await footer.boundingBox())!;
+  const linksBounds = (await footer.locator('.footer-links').boundingBox())!;
+  const zoomBounds = (await footer.getByRole('button', { name: 'Document zoom' }).boundingBox())!;
+  expect(linksBounds.x - footerBounds.x).toBeLessThan(40);
+  expect(footerBounds.x + footerBounds.width - zoomBounds.x - zoomBounds.width).toBeLessThan(40);
+  await expect(website).toHaveAttribute('href', 'https://www.m45.engineering/');
+  await expect(github).toHaveAttribute('href', 'https://github.com/m45-engineering/slate');
+  await expect(github.locator('img')).toHaveJSProperty('naturalWidth', 16);
+  await application.evaluate(({ shell }) => {
+    Reflect.set(globalThis, 'footerLinksOpened', []);
+    shell.openExternal = async url => { Reflect.get(globalThis, 'footerLinksOpened').push(url); };
+  });
+  const editorUrl = page.url();
+  await website.click();
+  await github.click();
+  await expect.poll(() => application.evaluate(() => Reflect.get(globalThis, 'footerLinksOpened'))).toEqual([
+    'https://www.m45.engineering/', 'https://github.com/m45-engineering/slate',
+  ]);
+  expect(page.url()).toBe(editorUrl);
+  expect(await readFile(file, 'utf8')).toBe(original);
+  await footer.screenshot({ path: 'tmp/slate-footer.png' });
+});
+
 test('Save stays disabled and view changes leave an unchanged file untouched', async () => {
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(original);
   await page.getByRole('tab', { name: 'Visual', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
-  await expect(page.getByText('Saved to file', { exact: true })).toBeVisible();
   expect(await readFile(file, 'utf8')).toBe(original);
 });
 
@@ -120,7 +151,6 @@ test('existing files stay unchanged until explicitly saved', async () => {
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => readFile(file, 'utf8')).toBe('# Latest edit\n');
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
-  await expect(page.getByText('Saved to file', { exact: true })).toBeVisible();
   expect(await application.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('save-document')?.enabled)).toBe(false);
 });
 
@@ -143,7 +173,7 @@ test('new documents and later edits both require explicit Save', async () => {
   expect(await readFile(target, 'utf8')).toBe('# Unsaved draft\n');
   await page.keyboard.press('ControlOrMeta+s');
   await expect.poll(() => readFile(target, 'utf8')).toBe('# Saved explicitly\n');
-  await expect(page.getByText('Saved to file', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await restart();
   await expect(page.getByRole('heading', { name: 'Saved explicitly' })).toBeVisible();
 });
@@ -165,7 +195,7 @@ test('visual text, table edits, and Mermaid source survive saving and reopening'
   await expect(diagramSource).toBeVisible();
   await diagramSource.fill('flowchart LR\n  A[Write] --> B[Review]\n  B --> C[Ship]');
   await page.keyboard.press('ControlOrMeta+s');
-  await expect(page.getByText('Saved to file', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   const saved = await readFile(file, 'utf8');
   expect(saved).toContain('Almost Ready');
   expect(saved).toContain('C[Ship]');
@@ -193,7 +223,7 @@ test('source-only content stays intact and blocks destructive visual conversion'
   await page.getByRole('tab', { name: 'Visual', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+s');
-  await expect(page.getByText('Saved to file', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   expect(await readFile(file, 'utf8')).toBe(markdown);
 });
 
@@ -204,7 +234,7 @@ test('inserting and editing a table writes Markdown, not HTML', async () => {
   await page.getByRole('button', { name: 'Insert table', exact: true }).click();
   await page.keyboard.type('Column A');
   await page.keyboard.press('ControlOrMeta+s');
-  await expect(page.getByText('Saved to file', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   const saved = await readFile(file, 'utf8');
   expect(saved).toContain('Column A');
   expect(saved).not.toContain('<table');
@@ -232,7 +262,7 @@ test('closing a dirty tab honors canceled unsaved-change confirmation', async ()
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Unsaved work\n');
-  await expect(page.getByText('Unsaved changes', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close sample.md', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Save changes?' })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -297,6 +327,33 @@ for (const width of [1120, 980]) {
     expect(await readFile(file, 'utf8')).toBe(original);
   });
 }
+
+test('filename search finds and opens files after more than 50,000 directory entries', async () => {
+  await mkdir(path.join(directory, 'notes'));
+  await writeFile(path.join(directory, 'notes', 'needle.md'), '# Found in a large folder\n');
+  const root = await realpath(directory);
+  await application.evaluate((_, root) => {
+    const fs = process.getBuiltinModule('fs/promises');
+    const opendir = fs.opendir;
+    fs.opendir = async (directory, options) => {
+      if (String(directory) !== root) return opendir(directory, options);
+      const children = await fs.readdir(directory, { withFileTypes: true });
+      return {
+        async *[Symbol.asyncIterator]() {
+          for (let i = 0; i < 50_010; i++) {
+            yield { name: `asset-${i}.bin`, isDirectory: () => false, isFile: () => true };
+          }
+          yield* children;
+        },
+      };
+    };
+  }, root);
+  await page.getByRole('textbox', { name: 'Find file by name' }).fill('needle');
+  await expect(page.getByText('1 file', { exact: true })).toBeVisible();
+  await expect(page.getByText('Open a smaller folder', { exact: false })).toHaveCount(0);
+  await page.getByRole('button', { name: 'needle.md notes', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Found in a large folder' })).toBeVisible();
+});
 
 test('text styles use a shadcn menu with heading previews and preserve the edit selection', async () => {
   await page.getByRole('heading', { name: 'A real document', exact: true }).click();
@@ -441,7 +498,7 @@ test('a deleted remembered folder does not prevent startup', async () => {
   }, workspace);
   await page.evaluate(() => window.slate!.openFolder());
   await page.getByRole('button', { name: 'Close sample.md', exact: true }).click();
-  await expect(page.getByText('Not saved yet', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toBeVisible();
   await rm(workspace, { recursive: true });
   await restart();
   await expect(page.getByText('The last folder is no longer available. You can open another folder.')).toBeVisible();
@@ -468,7 +525,7 @@ test('source files open from search, save exactly, and restore on restart', asyn
   await source.fill(updated);
   await page.keyboard.press('ControlOrMeta+s');
   await expect.poll(() => readFile(target, 'utf8')).toBe(updated);
-  await expect(page.getByText('Saved to file', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await restart();
   await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue(updated);
   await expect(page.getByRole('button', { name: 'component.tsx', exact: true })).toHaveAttribute('aria-current', 'page');
@@ -703,7 +760,7 @@ test('tab menu closes others, honors Cancel, and closes all with explicit discar
   await page.getByRole('menuitem', { name: 'Close All', exact: true }).click();
   await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(page.getByRole('tablist', { name: 'Open documents' }).getByRole('tab')).toHaveCount(1);
-  await expect(page.getByText('Not saved yet', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toBeVisible();
   expect(await readFile(file, 'utf8')).toBe(original);
   expect(await readFile(second, 'utf8')).toBe('# Second\n');
 });

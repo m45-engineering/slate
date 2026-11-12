@@ -210,12 +210,10 @@ button svg { flex-shrink: 0; }
   .source-editor textarea.has-highlighting { color: CanvasText; caret-color: auto; }
 }
 .statusbar { height: 32px; min-height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; font-size: 11px; color: var(--ui-muted); }
-.statusbar > span { display: flex; align-items: center; }
-.statusbar > span:last-child { min-width: 160px; justify-content: flex-end; }
-.status-divider { padding: 0 9px; }
-.footer-document { display: flex; align-items: center; min-width: 0; max-width: 45%; overflow: hidden; white-space: nowrap; }
-.footer-document > span:first-child { overflow: hidden; text-overflow: ellipsis; }
-.footer-document .save-status { flex-shrink: 0; }
+.footer-links { display: flex; align-items: center; gap: 8px; }
+.footer-link { height: 26px; padding: 0 4px; font-size: 11px; }
+.footer-github { width: 26px; height: 26px; }
+.footer-github img { pointer-events: none; }
 .zoom-control { height: 26px; padding: 0 4px; gap: 5px; font-size: 12px; }
 .notice { padding: 8px 24px; display: flex; align-items: center; gap: 12px; background: var(--ui-surface); font-size: 13px; flex-shrink: 0; }
 .notice > span { flex: 1; }

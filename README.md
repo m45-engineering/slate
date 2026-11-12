@@ -10,27 +10,27 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download the `.dmg` for your Mac: `arm64` for Apple Silicon, or `x64` for Intel. Only install a build matching your Mac.
+1. Download `Slate-0.1.0-mac-arm64.dmg` from the [v0.1.0 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.0). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
 Quit Slate before installing an update. Your remembered workspace and recovery drafts are stored separately from the app and are preserved when replacing it.
 
-The first Apple Silicon installer has been built and tested locally: `release/Slate-0.1.0-mac-arm64.dmg`. Local builds are ad-hoc signed, without Apple notarization. If macOS blocks a build you trust, use **System Settings → Privacy & Security → Open Anyway** after trying to open it. Public distribution with a Developer ID signature and notarization is still pending. An Intel build is not yet available.
+The Apple Silicon installer is ad-hoc signed, without Apple notarization. If macOS blocks a build you trust, use **System Settings → Privacy & Security → Open Anyway** after trying to open it. A Developer ID signature and notarization are still pending.
 
 ### Windows
 
-1. Download the Windows installer, named `Slate-<version>-win-x64.exe` for a standard Intel/AMD PC.
+1. Download `Slate-0.1.0-win-x64.exe` from the [v0.1.0 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.0) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-**Windows status:** the installer is configured, but the first Windows build and its tests have not run yet. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests on Windows and macOS. Once a run succeeds, open that run, download the matching artifact (`slate-windows-latest` or `slate-macos-latest`), and extract the ZIP to get the installer. Artifacts require GitHub sign-in and access to this private repository. Installers are not yet published as GitHub Releases.
+Both installers are available in the v0.1.0 release. They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
 
 ## First version
 
-- Visual editing and raw Markdown, with an outline and word count.
+- Visual editing and raw Markdown, with a document outline.
 - A resizable shadcn folder sidebar with lazy directory browsing, live filename search, current-file highlighting, and an Outline tab. Markdown opens in the visual editor; text and code open in the source editor. Binary files remain visible for context.
 - Source editing with line numbers, Geist Mono, document zoom, and the same explicit Save and conflict protection. Supports TypeScript/JavaScript, Python, C/C++, SQL, JSON/JSONL, YAML, XML/XMI/ReqIF, HTML/SVG source, CSS, CSV, shell scripts, patches, plain text, and common extensionless files such as Dockerfile and Makefile.
 - Create files and folders directly from the sidebar: use the icons beside the workspace name for the root, or right-click a folder for New File / New Folder. New files open in a tab; existing files are never replaced.
@@ -59,7 +59,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Until Slate is public, cloning requires a GitHub account with repository access. Run these commands in a terminal such as Ghostty on macOS or PowerShell on Windows. `pnpm dev` launches the desktop app with live updates. The local UI server uses `127.0.0.1:3210`.
+Run these commands in a terminal such as Ghostty on macOS or PowerShell on Windows. `pnpm dev` launches the desktop app with live updates. The local UI server uses `127.0.0.1:3210`.
 
 To open a repository during development, use `pnpm dev -- /absolute/path/to/repository`, or `pnpm dev -- C:\work\repository` on Windows. To restart development, quit Slate, stop the command with **Ctrl+C** if it is still running, and run `pnpm dev` again.
 
@@ -124,7 +124,7 @@ First run `pnpm install --frozen-lockfile`. Each packaging command regenerates t
 
 [The build workflow](.github/workflows/build.yml) runs tests and builds both platforms on their native runners after a push or pull request. Maintainers can also use **Actions → Build Slate → Run workflow**. It uploads installers as build artifacts; it does not publish releases.
 
-**Release status:** macOS packaging uses `identity: "-"`, `hardenedRuntime: false`, and `notarize: false` for a locally signed build without selecting a Keychain certificate. Build on the target architecture with its matching Electron installation. Public distribution requires a Developer ID signature and notarization on macOS, and a trusted signing certificate on Windows. There is no automatic updater.
+**Release status:** macOS packaging uses `identity: "-"`, `hardenedRuntime: false`, and `notarize: false` for a locally signed build without selecting a Keychain certificate. Build on the target architecture with its matching Electron installation. To avoid unverified-developer warnings, macOS builds need a Developer ID signature and notarization, and Windows builds need a trusted signing certificate. There is no automatic updater.
 
 `pnpm icons` regenerates the app icon, startup mark, and installer background. `pnpm dev` and `pnpm start` use a cached, branded macOS launcher so development windows also appear as Slate. The original Electron dependency is left untouched.
 
@@ -158,13 +158,23 @@ pnpm test:e2e    # launch Electron; requires a desktop session
 
 [Desktop tests](tests/desktop.spec.ts) exercise the actual exported app, including native file loading, Markdown round trips, source editing and explicit saving, Save / Discard / Cancel, draft recovery, session restore, table editing, Mermaid rendering, and external changes. [File tests](tests/file-store.test.cjs) cover byte preservation, line endings, conflicts, and invalid files.
 
+## License
+
+Slate's original code is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+Use, modification, and redistribution are free for the license's permitted noncommercial purposes. The standard license also expressly permits use by charitable organizations, educational institutions, public research organizations, public safety or health organizations, environmental protection organizations, and government institutions. See the full terms for the precise scope.
+
+Commercial use outside those permitted purposes requires a separate license from [M45 Engineering](https://m45.engineering/). No commercial license is granted by this repository.
+
+This is source-available software with a noncommercial restriction, rather than an OSI-approved open-source license. The license applies to Slate's software; it does not place your documents under that license. Third-party components retain their own licenses. Redistributed copies must include the license terms (or their URL) and the [required notice](NOTICE).
+
 ## Repository access and contributions
 
-Slate is maintained by [Florian Wolf (@florian-zeev)](https://github.com/florian-zeev) under [M45 Engineering](https://github.com/m45-engineering/slate). The repository is private for now; making it public later is a separate decision. External pull requests are not accepted. Repository write access is reserved for the maintainer, subject to organization owners' administrative access.
+Slate is maintained by [Florian Wolf (@florian-zeev)](https://github.com/florian-zeev) under [M45 Engineering](https://github.com/m45-engineering/slate). External pull requests are not accepted. Repository write access is reserved for the maintainer, subject to organization owners' administrative access.
 
 GitHub is configured with **Pull requests → Collaborators only**, with `florian-zeev` as the only account with write/admin access and no repository teams or deploy keys. Making the repository public should retain that restriction. GitHub organization owners retain administrative authority over organization repositories, so review access again if the organization's ownership or base permissions change. A public repository can still be read and forked; these settings control changes to the official repository, not copies made by other people. See [GitHub's pull request settings](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/disabling-pull-requests).
 
-No open-source license has been selected yet. Before making the repository public, choose the license and review the distribution/signing setup. Private customer meeting notes and local build artifacts are not included in the source tree.
+Before making the repository public, review the repository history and distribution/signing setup. Private customer meeting notes and local build artifacts are not included in the source tree. This local licensing change does not alter previously published release assets.
 
 ## Implementation
 

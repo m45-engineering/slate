@@ -6,7 +6,7 @@ export type FileResult = { document?: SlateDocument; canceled?: boolean; conflic
 export type LocalFolder = { path: string; name: string };
 export type FolderEntry = { path: string; name: string; kind: 'directory' | 'file' | 'link'; editable: boolean };
 export type FolderListing = { entries?: FolderEntry[]; truncated?: boolean; error?: string };
-export type FolderSearch = FolderListing & { total?: number };
+export type FolderSearch = { entries?: FolderEntry[]; total?: number; unreadableFolders?: number; error?: string };
 
 export interface DesktopBridge {
   platform: string;
