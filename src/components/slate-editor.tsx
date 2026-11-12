@@ -14,6 +14,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { SourceEditor } from './source-editor';
+import { useFindReplace } from './use-find-replace';
+import { FindHighlights } from '@/lib/find-highlights';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from './ui/dialog';
 import { TooltipHint } from './ui/tooltip';
@@ -127,6 +129,7 @@ export function SlateEditor() {
     immediatelyRender: false,
     extensions: [
       ...documentExtensions(setFormula),
+      FindHighlights,
       Placeholder.configure({ placeholder: 'Start writing. Make room for an idea…' }),
     ],
     content: EMPTY_DOCUMENT.content,
@@ -135,6 +138,8 @@ export function SlateEditor() {
     onUpdate: ({ editor: current }) => { if (isMarkdown(docRef.current.name)) setSource(current.getMarkdown()); },
     onTransaction: () => setRevision(value => value + 1),
   });
+
+  const find = useFindReplace({ editor, source, mode, documentId: doc.id, sourceInput, onSourceChange: setSource });
 
   const cacheActive = useCallback(() => {
     tabDrafts.current.set(docRef.current.id, {
@@ -407,9 +412,22 @@ export function SlateEditor() {
       if (command === 'zoom-in') zoomDocument('in');
       if (command === 'zoom-out') zoomDocument('out');
       if (command === 'zoom-reset') zoomDocument('reset');
+      if (command === 'find' && !confirmation && !formula) find.openFind();
+      if (command === 'replace' && !confirmation && !formula) find.openFind(true);
+      if (command === 'find-next' && !confirmation && !formula) find.navigate(1);
+      if (command === 'find-previous' && !confirmation && !formula) find.navigate(-1);
     });
     const keyboard = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return;
+      if (!confirmation && !formula) {
+        const key = event.key.toLowerCase();
+        if (key === 'f' || (event.ctrlKey && key === 'h') || (event.metaKey && event.altKey && key === 'f')) {
+          event.preventDefault();
+          find.openFind(event.altKey || key === 'h');
+          return;
+        }
+        if (key === 'g') { event.preventDefault(); find.navigate(event.shiftKey ? -1 : 1); return; }
+      }
       if (event.key.toLowerCase() === 's') {
         event.preventDefault();
         if (confirmation?.allowSave) void saveBeforeContinuing(event.shiftKey);
@@ -436,7 +454,7 @@ export function SlateEditor() {
     };
     window.addEventListener('keydown', keyboard); window.addEventListener('beforeunload', beforeUnload);
     return () => { unsubscribe?.(); window.removeEventListener('keydown', keyboard); window.removeEventListener('beforeunload', beforeUnload); };
-  }, [save, open, openFolder, newDocument, switchMode, zoomDocument, confirmation, saveBeforeContinuing, closeTab, selectTab, exportPdf]);
+  }, [save, open, openFolder, newDocument, switchMode, zoomDocument, confirmation, formula, saveBeforeContinuing, closeTab, selectTab, exportPdf, find.openFind, find.navigate]);
 
   const headings: Heading[] = [];
   if (mode === 'visual') {
@@ -472,6 +490,7 @@ export function SlateEditor() {
       <div className="brand"><Tool label="Toggle sidebar" icon="panel" active={outlineOpen} onClick={() => setOutlineOpen(!outlineOpen)} /><span>Slate</span></div>
       <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{markdownDocument && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>
       <div className="file-actions">
+        <Tool label={`Find (${isMac ? '⌘' : 'Ctrl+'}F)`} icon="search" onClick={() => find.openFind()} />
         {desktop && markdownDocument && <TooltipHint content={exporting ? 'Exporting PDF…' : 'Export PDF'}><Button variant="ghost" className="text-button export-button" aria-label={exporting ? 'Exporting PDF' : 'Export PDF'} disabled={exporting || saving} onClick={() => void exportPdf()}><Icon name="file" /><span>{exporting ? 'Exporting…' : 'Export PDF'}</span></Button></TooltipHint>}
         <TooltipHint content={`New document (${isMac ? '⌘' : 'Ctrl+'}N)`}><Button variant="ghost" className="text-button" onClick={() => void newDocument()}><Icon name="plus" /><span>New</span></Button></TooltipHint>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="text-button"><Icon name="open" /><span>Open</span><Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => void open()}>Open file…</DropdownMenuItem><DropdownMenuItem onSelect={() => void openFolder()}>Open folder…</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
@@ -510,7 +529,7 @@ export function SlateEditor() {
       <ResizablePanel id="editor" minSize={300}>
       <main className="editor-main">
         <div className={`formatbar ${toolbarDisabled ? 'source-formatbar' : ''}`} aria-label="Formatting toolbar">
-          {toolbarDisabled ? <span className="source-caption"><Icon name="code" />{markdownDocument ? 'Markdown source' : language} <span>Everything, exactly as written.</span></span> : <>
+          {toolbarDisabled ? <span className="source-caption"><Icon name="code" />{markdownDocument ? 'Markdown source' : language}</span> : <>
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button variant="ghost" className="text-style-trigger" aria-label="Text style"><span>{editor?.isActive('heading') ? `Heading ${editor.getAttributes('heading').level}` : 'Normal text'}</span><Icon name="chevron" size={13} /></Button></DropdownMenuTrigger>
               <DropdownMenuContent className="text-style-menu" align="start">
@@ -537,10 +556,10 @@ export function SlateEditor() {
             <Tool label="Insert table" icon="table" onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} />
             <Tool label="Code block" icon="code" active={editor?.isActive('codeBlock')} onClick={() => editor?.chain().focus().toggleCodeBlock().run()} />
             <Tool label="Insert formula" icon="formula" onClick={() => setFormula({ kind: 'inline', latex: '' })} />
-            <Tool label="Insert Mermaid diagram" icon="diagram" onClick={() => editor?.chain().focus().insertContent({ type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: 'flowchart LR\n  A[Start] --> B[An idea]' }] }).run()} />
             <div className="toolbar-spacer" /><Tool label="Undo" icon="undo" disabled={!editor?.can().undo()} onClick={() => editor?.chain().focus().undo().run()} /><Tool label="Redo" icon="redo" disabled={!editor?.can().redo()} onClick={() => editor?.chain().focus().redo().run()} />
           </>}
         </div>
+        {find.bar}
         {linkOpen && mode === 'visual' && <form className="link-popover" onSubmit={event => {
           event.preventDefault();
           if (!linkUrl) editor?.chain().focus().extendMarkRange('link').unsetLink().run();
@@ -552,7 +571,7 @@ export function SlateEditor() {
         <div className="document-scroll" ref={scrollArea}>
           <div className={`paper ${mode === 'source' ? 'source-paper' : ''}`} style={{ zoom: documentZoom / 100 }}>
             {/* Keep Tiptap mounted so its React plugins are not registered twice when switching views. */}
-            <div hidden={mode !== 'visual'}><EditorContent editor={editor} /></div>{mode === 'source' && <SourceEditor key={doc.id} ref={sourceInput} value={source} filename={doc.name} label={markdownDocument ? 'Markdown source' : 'Source editor'} onChange={setSource} />}
+            <div hidden={mode !== 'visual'}><EditorContent editor={editor} /></div>{mode === 'source' && <SourceEditor key={doc.id} ref={sourceInput} value={source} filename={doc.name} label={markdownDocument ? 'Markdown source' : 'Source editor'} onChange={setSource} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
           </div>
         </div>
       </main>

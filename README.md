@@ -31,6 +31,7 @@ Both installers are available in the v0.1.1 release. They contain the code from 
 ## Features
 
 - Visual editing and raw Markdown, with a document outline.
+- Find and replace in the current document, with highlighted matches, next/previous navigation, match-case, and Replace All. Use ⌘F / Ctrl+F to find; ⌥⌘F on macOS or Ctrl+H on Windows to replace. Enter / Shift+Enter steps through matches; Escape closes the bar. Visual replacements preserve surrounding formatting; Markdown and source mode search the exact file text.
 - A resizable shadcn folder sidebar with lazy directory browsing, live filename search, current-file highlighting, and an Outline tab. Markdown opens in the visual editor; text and code open in the source editor. Binary files remain visible for context.
 - Source editing with line numbers, Geist Mono, document zoom, and the same explicit Save and conflict protection. Supports TypeScript/JavaScript, Python, C/C++, SQL, JSON/JSONL, YAML, XML/XMI/ReqIF, HTML/SVG source, CSS, CSV, shell scripts, patches, plain text, and common extensionless files such as Dockerfile and Makefile.
 - Create files and folders directly from the sidebar: use the icons beside the workspace name for the root, or right-click a folder for New File / New Folder. New files open in a tab; existing files are never replaced.
@@ -41,7 +42,7 @@ Both installers are available in the v0.1.1 release. They contain the code from 
 - A single compact toolbar, high-contrast monochrome controls, and a blank document at startup.
 - A wider visual document area and document zoom from 75% to 200%, without scaling the application controls.
 - Headings, bold, italic, strikethrough, links, lists, checkboxes, and quotes.
-- Editable Markdown tables, fenced code blocks, and Mermaid diagrams with source editing and live previews.
+- Editable Markdown tables and fenced code blocks. Mermaid diagrams are preview-only in Visual mode; add or edit their fenced source in Markdown view.
 - Inline and display LaTeX formulas, rendered locally with KaTeX and preserved in Markdown and PDF exports.
 - Local PDF export for Markdown, including Mermaid diagrams, tables, task lists, clickable web links, and page numbers.
 - Native Open, Save, Save As, keyboard shortcuts, and `.md` / `.markdown` file associations.
@@ -111,6 +112,9 @@ The application reuses its existing window. Opening another document adds a tab,
 | Save | ⌘S | Ctrl+S |
 | Save As | ⌘⇧S | Ctrl+Shift+S |
 | Close tab | ⌘W | Ctrl+W |
+| Find | ⌘F | Ctrl+F |
+| Find and replace | ⌥⌘F | Ctrl+H |
+| Next / previous match | ⌘G / ⌘⇧G | Ctrl+G / Ctrl+Shift+G |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Ctrl+Tab / Ctrl+Shift+Tab |
 | Bold / italic | ⌘B / ⌘I | Ctrl+B / Ctrl+I |
 

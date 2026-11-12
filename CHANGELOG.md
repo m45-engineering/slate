@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add find and replace in Visual, Markdown, and source views, with highlighted matches, next/previous navigation, match-case, Replace All, and undo.
+- Make Mermaid diagrams preview-only in Visual view; edit their source in Markdown view.
+- Strengthen source-code highlighting colors and remove the extra source-toolbar tagline.
+
 ## 0.1.1 - 2026-11-12
 
 - Add local PDF export for Markdown, including Mermaid diagrams, tables, task lists, page numbers, and clickable web links. Wide diagrams can use landscape pages, and table headers repeat across pages.

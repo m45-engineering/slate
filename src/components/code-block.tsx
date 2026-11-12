@@ -3,13 +3,10 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import CodeBlock from '@tiptap/extension-code-block';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
-import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Textarea } from './ui/textarea';
 
-function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeViewProps) {
+function CodeBlockView({ node, updateAttributes, editor }: NodeViewProps) {
   const isMermaid = node.attrs.language === 'mermaid';
-  const [editing, setEditing] = useState(!node.textContent);
   const [svg, setSvg] = useState('');
   const [error, setError] = useState('');
   const [renderedSource, setRenderedSource] = useState<string | null>(null);
@@ -46,25 +43,13 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeViewProps
         onChange={event => updateAttributes({ language: event.target.value.trim() })}
         spellCheck={false} disabled={!editor.isEditable}
       />}
-      {isMermaid && <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)}>{editing ? 'Hide source' : 'Edit diagram'}</Button>}
+      {isMermaid && editor.isEditable && <span>Edit in Markdown view</span>}
       {!isMermaid && <span>Code</span>}
     </div>
     <pre className={isMermaid ? 'code-hidden' : ''}><NodeViewContent<'code'> as="code" spellCheck={false} /></pre>
-    {isMermaid && editing && <div contentEditable={false}><Textarea
-      className="mermaid-source" aria-label="Mermaid source" autoFocus spellCheck={false}
-      rows={Math.max(4, node.textContent.split('\n').length + 1)} value={node.textContent}
-      onChange={event => {
-        const position = getPos();
-        const text = event.target.value;
-        if (typeof position === 'number') editor.commands.command(({ tr }) => {
-          tr.insertText(text, position + 1, position + node.nodeSize - 1);
-          return true;
-        });
-      }}
-    /></div>}
     {isMermaid && <div className="diagram-preview" contentEditable={false}>
       {svg ? <div role="img" aria-label="Mermaid diagram" dangerouslySetInnerHTML={{ __html: svg }} /> : !error && <p className="diagram-loading">Drawing your diagram…</p>}
-      {error && <p className="diagram-error" role="status">{error} {svg ? 'Showing the last valid diagram.' : 'Edit the source to draw a preview.'}</p>}
+      {error && <p className="diagram-error" role="status">{error} Edit the source in Markdown view to update the preview.</p>}
     </div>}
   </NodeViewWrapper>;
 }
