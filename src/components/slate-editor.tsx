@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { EditorState } from '@tiptap/pm/state';
 import { EditorContent, useEditor } from '@tiptap/react';
 import Placeholder from '@tiptap/extension-placeholder';
-import { documentExtensions } from '@/lib/editor-extensions';
+import { documentExtensions, type FormulaSelection } from '@/lib/editor-extensions';
 import { EMPTY_DOCUMENT, isMarkdown, isTextFile, fileLabel, sourceOnlyReason, type SlateDocument, type WorkspaceDocuments, type LocalFolder } from '@/lib/document';
 import { Icon, type IconName } from './icon';
 import { DocumentTabs } from './document-tabs';
@@ -12,6 +12,7 @@ import { FolderSidebar } from './folder-sidebar';
 import { SidebarProvider } from './ui/sidebar';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
 import { SourceEditor } from './source-editor';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from './ui/dialog';
@@ -91,6 +92,7 @@ export function SlateEditor() {
   const [isMac, setIsMac] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+  const [formula, setFormula] = useState<FormulaSelection | null>(null);
   const [recoveries, setRecoveries] = useState<SlateDocument[]>([]);
   const [recoveryReady, setRecoveryReady] = useState(false);
   const recovery = recoveries[0];
@@ -124,7 +126,7 @@ export function SlateEditor() {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      ...documentExtensions(),
+      ...documentExtensions(setFormula),
       Placeholder.configure({ placeholder: 'Start writing. Make room for an idea…' }),
     ],
     content: EMPTY_DOCUMENT.content,
@@ -175,7 +177,7 @@ export function SlateEditor() {
     dirtyRef.current = nextSource !== nextSaved;
     liveState.current = { source: nextSource, savedSource: nextSaved, mode: nextMode, diskChanged: changed };
     setDoc(next); setSource(nextSource); setSavedSource(nextSaved); setMode(nextMode);
-    setDiskChanged(changed); if (!preserveNotice) setNotice(''); setLinkOpen(false);
+    setDiskChanged(changed); if (!preserveNotice) setNotice(''); setLinkOpen(false); setFormula(null);
     if (editor && nextMode === 'visual') {
       if (draft?.visualState) editor.view.updateState(draft.visualState);
       else {
@@ -534,6 +536,7 @@ export function SlateEditor() {
             <span className="separator" />
             <Tool label="Insert table" icon="table" onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} />
             <Tool label="Code block" icon="code" active={editor?.isActive('codeBlock')} onClick={() => editor?.chain().focus().toggleCodeBlock().run()} />
+            <Tool label="Insert formula" icon="formula" onClick={() => setFormula({ kind: 'inline', latex: '' })} />
             <Tool label="Insert Mermaid diagram" icon="diagram" onClick={() => editor?.chain().focus().insertContent({ type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: 'flowchart LR\n  A[Start] --> B[An idea]' }] }).run()} />
             <div className="toolbar-spacer" /><Tool label="Undo" icon="undo" disabled={!editor?.can().undo()} onClick={() => editor?.chain().focus().undo().run()} /><Tool label="Redo" icon="redo" disabled={!editor?.can().redo()} onClick={() => editor?.chain().focus().redo().run()} />
           </>}
@@ -583,6 +586,29 @@ export function SlateEditor() {
           <Button autoFocus variant="secondary" disabled={saving} onClick={() => finishConfirmation(false)}>Cancel</Button>
           <Button variant={confirmation?.allowSave ? 'secondary' : 'default'} disabled={saving} onClick={() => { if (confirmation?.allowSave) clearRecovery(docRef.current.id); finishConfirmation(true); }}>{confirmation?.action}</Button>
           {confirmation?.allowSave && <Button disabled={saving} onClick={() => void saveBeforeContinuing()}>{saving ? 'Saving…' : 'Save'}</Button>}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={Boolean(formula)} onOpenChange={open => { if (!open) setFormula(null); }}>
+      <DialogContent>
+        <DialogTitle>{formula?.pos === undefined ? 'Insert formula' : 'Edit formula'}</DialogTitle>
+        <DialogDescription>Enter LaTeX without the surrounding dollar signs. You can also edit formulas in Markdown view.</DialogDescription>
+        {formula?.pos === undefined && <Tabs value={formula?.kind ?? 'inline'} onValueChange={kind => setFormula(current => current ? { ...current, kind: kind as 'inline' | 'block' } : null)}><TabsList aria-label="Formula layout"><TabsTrigger value="inline">Inline</TabsTrigger><TabsTrigger value="block">Separate line</TabsTrigger></TabsList></Tabs>}
+        <Textarea autoFocus aria-label="Formula source" value={formula?.latex ?? ''} onChange={event => setFormula(current => current ? { ...current, latex: event.target.value } : null)} rows={4} spellCheck={false} />
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setFormula(null)}>Cancel</Button>
+          <Button disabled={!formula?.latex.trim()} onClick={() => {
+            if (!editor || !formula) return;
+            const chain = editor.chain().focus();
+            if (formula.kind === 'inline') {
+              if (formula.pos === undefined) chain.insertInlineMath({ latex: formula.latex }).run();
+              else chain.updateInlineMath({ latex: formula.latex, pos: formula.pos }).run();
+            } else {
+              if (formula.pos === undefined) chain.insertBlockMath({ latex: formula.latex }).run();
+              else chain.updateBlockMath({ latex: formula.latex, pos: formula.pos }).run();
+            }
+            setFormula(null);
+          }}>Apply</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

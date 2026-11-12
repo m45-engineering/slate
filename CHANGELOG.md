@@ -8,6 +8,7 @@
 - Make heading levels more distinct through size, weight, and spacing. Widen Visual view and use 15px body text.
 - Remove the conflicting Visual/Markdown keyboard shortcut; the tabs and View menu remain available.
 - Keep shell variables and other inline code from being mistaken for math or unsupported Markdown.
+- Render inline and display LaTeX formulas locally, with insertion and editing controls and PDF export support.
 - Retry temporary Windows file locks during Save while preserving external-change checks and unsaved edits.
 
-PDF export supports the same Markdown subset as Visual view. Images, embedded HTML, front matter, reference definitions, footnotes, and math are not yet supported. The macOS installer is ad-hoc signed without notarization; the Windows installer is unsigned.
+PDF export supports the same Markdown subset as Visual view. Images, embedded HTML, front matter, reference definitions, and footnotes are not yet supported. The macOS installer is ad-hoc signed without notarization; the Windows installer is unsigned.

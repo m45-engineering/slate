@@ -35,6 +35,9 @@ importers:
       '@tiptap/extension-code-block':
         specifier: 3.33.1
         version: 3.33.1(@tiptap/core@3.33.1(@tiptap/pm@3.33.1))(@tiptap/pm@3.33.1)
+      '@tiptap/extension-mathematics':
+        specifier: 3.33.1
+        version: 3.33.1(@tiptap/core@3.33.1(@tiptap/pm@3.33.1))(@tiptap/pm@3.33.1)(katex@0.18.10)
       '@tiptap/extension-placeholder':
         specifier: 3.33.1
         version: 3.33.1(@tiptap/extensions@3.33.1(@tiptap/core@3.33.1(@tiptap/pm@3.33.1))(@tiptap/pm@3.33.1))
@@ -71,6 +74,9 @@ importers:
       highlight.js:
         specifier: ^11.12.0
         version: 11.12.0
+      katex:
+        specifier: 0.18.10
+        version: 0.18.10
       lucide-react:
         specifier: ^1.72.0
         version: 1.72.0(@types/react@19.3.0)(react@19.3.1)
@@ -1050,6 +1056,13 @@ packages:
     peerDependencies:
       '@tiptap/core': 3.33.1
       '@tiptap/pm': 3.33.1
+
+  '@tiptap/extension-mathematics@3.33.1':
+    resolution: {integrity: sha512-0+mIV0NVUykSJ4tAEJflepCRuhr9J5M9sukvVhsvNUTsE06r3xf5qRAvm78m4Qkp19M62Tp8zqHusgnZOCsK+w==}
+    peerDependencies:
+      '@tiptap/core': 3.33.1
+      '@tiptap/pm': 3.33.1
+      katex: ^0.16.4 || ^0.17.0 || ^0.18.0
 
   '@tiptap/extension-ordered-list@3.33.1':
     resolution: {integrity: sha512-xlGidfYHA4CdZIv0AwRJ/V4z4vCP8yu2/r/ndePJf+FR3q5ZkThq2ZfCQwqDr4OcDMcpKPf2VKERBEOvBDrJBw==}
@@ -3663,6 +3676,12 @@ snapshots:
     dependencies:
       '@tiptap/core': 3.33.1(@tiptap/pm@3.33.1)
       '@tiptap/pm': 3.33.1
+
+  '@tiptap/extension-mathematics@3.33.1(@tiptap/core@3.33.1(@tiptap/pm@3.33.1))(@tiptap/pm@3.33.1)(katex@0.18.10)':
+    dependencies:
+      '@tiptap/core': 3.33.1(@tiptap/pm@3.33.1)
+      '@tiptap/pm': 3.33.1
+      katex: 0.18.10
 
   '@tiptap/extension-ordered-list@3.33.1(@tiptap/extension-list@3.33.1(@tiptap/core@3.33.1(@tiptap/pm@3.33.1))(@tiptap/pm@3.33.1))':
     dependencies:

@@ -65,6 +65,5 @@ export function sourceOnlyReason(markdown: string): string | null {
   if (/<!--|<\/?[a-z][^>]*>/i.test(prose)) return 'HTML';
   if (/!\[[^\]]*\]/.test(prose)) return 'images';
   if (/^\s{0,3}\[[^\]]+\]:/m.test(prose)) return 'reference definitions or footnotes';
-  if (/^\s*\$\$|(?<!\\)\$(?![\s$])[^\n$]*[^\s$\\]\$(?!\d)/m.test(prose)) return 'math notation';
   return null;
 }

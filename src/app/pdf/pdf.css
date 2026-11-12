@@ -27,3 +27,4 @@ html:has(.pdf-document), body:has(.pdf-document) { height: auto; overflow: visib
 .pdf-document .diagram-preview svg { display: block; width: 100%; height: auto; max-height: 235mm; margin: auto; }
 .pdf-document .task-checkbox { padding-top: 4px; }
 .pdf-document .task-checkbox button { opacity: 1; }
+.pdf-document .tiptap-mathematics-render[data-type='block-math'] { break-inside: avoid; overflow: visible; }

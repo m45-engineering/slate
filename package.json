@@ -32,6 +32,7 @@
     "@radix-ui/react-tabs": "^1.2.1",
     "@radix-ui/react-tooltip": "^1.4.1",
     "@tiptap/extension-code-block": "3.33.1",
+    "@tiptap/extension-mathematics": "3.33.1",
     "@tiptap/extension-placeholder": "3.33.1",
     "@tiptap/extension-table": "3.33.1",
     "@tiptap/extension-task-item": "3.33.1",
@@ -44,6 +45,7 @@
     "clsx": "^2.1.1",
     "geist": "1.9.2",
     "highlight.js": "^11.12.0",
+    "katex": "0.18.10",
     "lucide-react": "^1.72.0",
     "mermaid": "12.3.0",
     "next": "16.4.6",
@@ -113,7 +115,7 @@
       "allowToChangeInstallationDirectory": true
     },
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
-    "copyright": "Copyright \u00a9 2026 M45 Engineering",
+    "copyright": "Copyright © 2026 M45 Engineering",
     "electronDist": "node_modules/electron/dist",
     "npmRebuild": false,
     "dmg": {

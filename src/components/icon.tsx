@@ -14,6 +14,7 @@ const paths = {
   checkbox: 'M9 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V10 M9 10l4 4L22 4',
   quote: 'M3 5h7v7H5c0 4 3 5 3 5 M14 5h7v7h-5c0 4 3 5 3 5',
   code: 'm8 6-6 6 6 6 M16 6l6 6-6 6',
+  formula: 'M20 4H5l7 8-7 8h15',
   table: 'M3 3h18v18H3z M3 9h18 M3 15h18 M9 3v18 M15 3v18',
   diagram: 'M8 3h8v5H8z M3 16h6v5H3z M15 16h6v5h-6z M12 8v4 M6 16v-4h12v4',
   undo: 'M3 10h11a7 7 0 0 1 0 14 M3 10l5-5 M3 10l5 5',

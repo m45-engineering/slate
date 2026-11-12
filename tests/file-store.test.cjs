@@ -147,14 +147,13 @@ test('oversized files are rejected before loading into the editor', async t => {
   await assert.rejects(readDocument(file), /10 MB/);
 });
 
-test('source-only detection protects metadata, HTML, references, math, and images', async () => {
+test('source-only detection protects metadata, HTML, references, and images', async () => {
   const { sourceOnlyReason } = await import('../src/lib/document.ts');
   for (const source of [
     '---\ntitle: Important\n---\n\n# Text',
     '# Hello\n\n<!-- do not lose this -->',
     '![diagram](image.png)',
     '[doc]: https://example.com',
-    '$$\nx^2\n$$',
   ]) assert.ok(sourceOnlyReason(source), source);
   assert.equal(sourceOnlyReason('```html\n<div>Example</div>\n```'), null);
   assert.equal(sourceOnlyReason('````markdown\n```html\n<div>Example</div>\n```\n````'), null);
@@ -173,6 +172,6 @@ test('inline code and prices do not trigger unsupported Markdown warnings', asyn
     'Escaped \\$x + y\\$ is literal.',
   ]) assert.equal(sourceOnlyReason(source), null, source);
   for (const source of ['$x$', '$x^2 + y^2$', '$$\nx^2\n$$', '`$HOME` alongside $x^2$']) {
-    assert.equal(sourceOnlyReason(source), 'math notation', source);
+    assert.equal(sourceOnlyReason(source), null, source);
   }
 });

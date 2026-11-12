@@ -40,6 +40,11 @@ export function PdfDocument() {
     });
     const check = async () => {
       if (canceled || finishing) return;
+      if (editor.view.dom.querySelector('.inline-math-error, .block-math-error')) {
+        finishing = true;
+        window.slatePdf?.ready('A formula is invalid. Fix its LaTeX before exporting.');
+        return;
+      }
       const diagrams = [...editor.view.dom.querySelectorAll<HTMLElement>('.mermaid-block')];
       if (diagrams.some(element => element.dataset.mermaidStatus === 'error')) {
         finishing = true;

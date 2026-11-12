@@ -209,6 +209,59 @@ test('shell variables inside inline code remain available in Visual view', async
   expect(await readFile(file, 'utf8')).toBe(original);
 });
 
+test('formulas render, edit, export, and preserve Markdown without treating prices as math', async () => {
+  const target = path.join(directory, 'formulas.pdf');
+  await application.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, target);
+  const markdown = '# Formulas\n\nEinstein: $E=mc^2$. Fraction: $\\frac{a}{b}$.\n\n$$\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n$$\n\nThe price is $5 or $10. Shell code: `$HOME $PATH`.\n';
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  await source.fill(markdown);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(page.locator('.document-editor .tiptap-mathematics-render')).toHaveCount(3);
+  await expect(page.locator('.document-editor .katex')).toHaveCount(3);
+  await expect(page.locator('.document-editor')).toContainText('The price is $5 or $10.');
+  await expect(page.locator('.document-editor > p code')).toHaveText('$HOME $PATH');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(source).toHaveValue(markdown);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await page.locator('[data-type="inline-math"]').first().click();
+  const dialog = page.getByRole('dialog', { name: 'Edit formula', exact: true });
+  await dialog.getByRole('textbox', { name: 'Formula source' }).fill('E=mc^3');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('[data-type="inline-math"]').first()).toHaveAttribute('data-latex', 'E=mc^3');
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: `PDF saved to ${target}` })).toBeVisible({ timeout: 30_000 });
+  await writeFile('tmp/slate-formulas.pdf', await readFile(target));
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(source).toHaveValue(/\$E=mc\^3\$/);
+  await expect(source).toHaveValue(/\\frac\{a\}\{b\}/);
+  await expect(source).toHaveValue(/\$\$\n\\int_0\^1/);
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('formulas can be inserted and invalid LaTeX stops PDF export', async () => {
+  const target = path.join(directory, 'invalid-formula.pdf');
+  await application.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, target);
+  await page.getByRole('textbox', { name: 'Document editor' }).click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.getByRole('button', { name: 'Insert formula', exact: true }).click();
+  let dialog = page.getByRole('dialog', { name: 'Insert formula', exact: true });
+  await dialog.getByRole('tab', { name: 'Separate line', exact: true }).click();
+  await dialog.getByRole('textbox', { name: 'Formula source' }).fill('a^2+b^2=c^2');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  const formula = page.locator('[data-type="block-math"]');
+  await expect(formula).toHaveAttribute('data-latex', 'a^2+b^2=c^2');
+  await formula.click();
+  dialog = page.getByRole('dialog', { name: 'Edit formula', exact: true });
+  await dialog.getByRole('textbox', { name: 'Formula source' }).fill('\\frac{');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(formula).toHaveClass(/block-math-error/);
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'A formula is invalid' })).toBeVisible({ timeout: 30_000 });
+  await expect(readFile(target)).rejects.toThrow();
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
 test('PDF export includes unsaved Markdown and Mermaid without changing the document or view', async () => {
   const target = path.join(directory, 'export.pdf');
   await application.evaluate(({ dialog }, filePath) => {

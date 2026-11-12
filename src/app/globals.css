@@ -153,6 +153,11 @@ button svg { flex-shrink: 0; }
 .document-editor > :first-child { margin-top: 0; }
 .document-editor strong { font-weight: 550; }
 .document-editor a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.document-editor .tiptap-mathematics-render--editable { cursor: pointer; }
+.document-editor .tiptap-mathematics-render[data-type='inline-math'] { display: inline-block; vertical-align: baseline; }
+.document-editor .tiptap-mathematics-render[data-type='block-math'] { margin: 24px 0; overflow-x: auto; }
+.document-editor .katex { font-size: 1.1em; }
+.document-editor .inline-math-error, .document-editor .block-math-error { color: #b42318; font-family: var(--font-geist-mono), monospace; }
 .document-editor ul { list-style: disc; }
 .document-editor ol { list-style: decimal; }
 .document-editor ul, .document-editor ol { padding-left: 23px; margin: 16px 0; }

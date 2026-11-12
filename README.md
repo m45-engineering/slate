@@ -42,6 +42,7 @@ Both installers are available in the v0.1.1 release. They contain the code from 
 - A wider visual document area and document zoom from 75% to 200%, without scaling the application controls.
 - Headings, bold, italic, strikethrough, links, lists, checkboxes, and quotes.
 - Editable Markdown tables, fenced code blocks, and Mermaid diagrams with source editing and live previews.
+- Inline and display LaTeX formulas, rendered locally with KaTeX and preserved in Markdown and PDF exports.
 - Local PDF export for Markdown, including Mermaid diagrams, tables, task lists, clickable web links, and page numbers.
 - Native Open, Save, Save As, keyboard shortcuts, and `.md` / `.markdown` file associations.
 - Explicit Save only: edits do not change the file on disk until Save or ⌘S / Ctrl+S. Save is active only while changes are pending; new documents need an initial Save to choose a filename. Closing a dirty tab, reloading, closing the window, or quitting offers Save / Discard / Cancel. Quitting and bulk close actions check each dirty tab separately; Cancel stops the remaining closes.
@@ -138,9 +139,13 @@ Text and code use a source editor with line numbers and locally bundled syntax h
 
 Opening, switching views, and saving without edits preserve the original file bytes and modification time. Editing in raw Markdown saves that source. Visual edits serialize the document through Tiptap and can normalize Markdown formatting (for example, table spacing and emphasis markers). UTF-8 BOM and CRLF line endings are retained for existing files.
 
-This version deliberately keeps YAML/TOML front matter, HTML, images, reference definitions, footnotes, and math in source mode. It does not claim lossless visual editing for every Markdown dialect. The source-mode guard covers these known unsupported forms; other custom Markdown extensions may also require source editing. Tiptap's Markdown extension is currently beta.
+This version deliberately keeps YAML/TOML front matter, HTML, images, reference definitions, and footnotes in source mode. It does not claim lossless visual editing for every Markdown dialect. The source-mode guard covers these known unsupported forms; other custom Markdown extensions may also require source editing. Tiptap's Markdown extension is currently beta.
 
 Mermaid uses strict rendering. Code is displayed, never executed. Web links are blue and open in the default browser when clicked. Remote images and embedded HTML are not rendered. File operations are restricted to the document selected through the OS or native file dialog.
+
+### Formulas
+
+Write inline LaTeX as `$E=mc^2$` and display LaTeX between `$$` delimiters on separate lines. Formulas render in Visual view and PDF exports. Use **Insert formula** in the formatting toolbar, or click a rendered formula to edit its LaTeX. KaTeX and its fonts are bundled locally; only its supported LaTeX commands are available. Invalid formulas show their source, and PDF export stops with an explanation until they are corrected. Shell variables inside code and ordinary dollar prices remain literal text.
 
 ### Export a PDF
 

@@ -6,3 +6,7 @@ separate commercial license from M45 Engineering.
 
 Third-party components remain under their respective licenses. This notice does
 not replace or restrict those licenses.
+
+KaTeX and Tiptap Mathematics license texts are included in
+public/third-party-math-licenses.txt (third-party-math-licenses.txt in the app's
+bundled web assets).
