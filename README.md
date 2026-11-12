@@ -10,7 +10,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-0.1.1-mac-arm64.dmg` from the [v0.1.1 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.1). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-0.1.2-mac-arm64.dmg` from the [v0.1.2 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.2). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -20,17 +20,18 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-0.1.1-win-x64.exe` from the [v0.1.1 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.1) for a standard Intel/AMD PC.
+1. Download `Slate-0.1.2-win-x64.exe` from the [v0.1.2 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.2) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Both installers are available in the v0.1.1 release. They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
+Both installers are available in the v0.1.2 release. They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
 
 ## Features
 
 - Visual editing and raw Markdown, with a document outline.
+- Find and replace in the current document, with highlighted matches, next/previous navigation, match-case, and Replace All. Use ⌘F / Ctrl+F to find; ⌥⌘F on macOS or Ctrl+H on Windows to replace. Enter / Shift+Enter steps through matches; Escape closes the bar. Visual replacements preserve surrounding formatting; Markdown and source mode search the exact file text.
 - A resizable shadcn folder sidebar with lazy directory browsing, live filename search, current-file highlighting, and an Outline tab. Markdown opens in the visual editor; text and code open in the source editor. Binary files remain visible for context.
 - Source editing with line numbers, Geist Mono, document zoom, and the same explicit Save and conflict protection. Supports TypeScript/JavaScript, Python, C/C++, SQL, JSON/JSONL, YAML, XML/XMI/ReqIF, HTML/SVG source, CSS, CSV, shell scripts, patches, plain text, and common extensionless files such as Dockerfile and Makefile.
 - Create files and folders directly from the sidebar: use the icons beside the workspace name for the root, or right-click a folder for New File / New Folder. New files open in a tab; existing files are never replaced.
@@ -41,7 +42,7 @@ Both installers are available in the v0.1.1 release. They contain the code from 
 - A single compact toolbar, high-contrast monochrome controls, and a blank document at startup.
 - A wider visual document area and document zoom from 75% to 200%, without scaling the application controls.
 - Headings, bold, italic, strikethrough, links, lists, checkboxes, and quotes.
-- Editable Markdown tables, fenced code blocks, and Mermaid diagrams with source editing and live previews.
+- Editable Markdown tables and fenced code blocks. Mermaid diagrams are preview-only in Visual mode; add or edit their fenced source in Markdown view.
 - Inline and display LaTeX formulas, rendered locally with KaTeX and preserved in Markdown and PDF exports.
 - Local PDF export for Markdown, including Mermaid diagrams, tables, task lists, clickable web links, and page numbers.
 - Native Open, Save, Save As, keyboard shortcuts, and `.md` / `.markdown` file associations.
@@ -111,6 +112,9 @@ The application reuses its existing window. Opening another document adds a tab,
 | Save | ⌘S | Ctrl+S |
 | Save As | ⌘⇧S | Ctrl+Shift+S |
 | Close tab | ⌘W | Ctrl+W |
+| Find | ⌘F | Ctrl+F |
+| Find and replace | ⌥⌘F | Ctrl+H |
+| Next / previous match | ⌘G / ⌘⇧G | Ctrl+G / Ctrl+Shift+G |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Ctrl+Tab / Ctrl+Shift+Tab |
 | Bold / italic | ⌘B / ⌘I | Ctrl+B / Ctrl+I |
 

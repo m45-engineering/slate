@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, Menu, MenuItem, dialog, ipcMain, protocol, net, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
@@ -441,14 +441,14 @@ function createMenu() {
     { id: 'export-pdf', label: 'Export PDF…', enabled: Boolean(current() && isMarkdown(current().name)), click: () => command('export-pdf') },
     { type: 'separator' }, { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => command('close-tab') },
   ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
+  const menu = Menu.buildFromTemplate([
     ...(process.platform === 'darwin' ? [{ label: 'Slate', submenu: [
       { label: 'About Slate', role: 'about' }, { type: 'separator' },
       { role: 'services' }, { type: 'separator' },
       { label: 'Hide Slate', role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
       { type: 'separator' }, { label: 'Quit Slate', role: 'quit' },
     ] }] : []),
-    { label: 'File', submenu: fileMenu }, { role: 'editMenu' },
+    { label: 'File', submenu: fileMenu }, { id: 'edit-menu', role: 'editMenu' },
     { label: 'View', submenu: [
       { id: 'toggle-editor-view', label: 'Toggle Visual / Markdown', click: () => command('toggle-mode') },
       { type: 'separator' },
@@ -459,7 +459,16 @@ function createMenu() {
       ...(launchedFromSource ? [{ role: 'toggleDevTools' }] : []),
     ] },
     { role: 'windowMenu' },
-  ]));
+  ]);
+  const editMenu = menu.getMenuItemById('edit-menu').submenu;
+  for (const item of [
+    { type: 'separator' },
+    { id: 'find', label: 'Find…', accelerator: 'CmdOrCtrl+F', click: () => command('find') },
+    { id: 'replace', label: 'Find and Replace…', accelerator: process.platform === 'darwin' ? 'Alt+Command+F' : 'Ctrl+H', click: () => command('replace') },
+    { id: 'find-next', label: 'Find Next', accelerator: 'CmdOrCtrl+G', click: () => command('find-next') },
+    { id: 'find-previous', label: 'Find Previous', accelerator: 'CmdOrCtrl+Shift+G', click: () => command('find-previous') },
+  ]) editMenu.append(new MenuItem(item));
+  Menu.setApplicationMenu(menu);
 }
 
 function createWindow() {
