@@ -57,6 +57,18 @@ async function delayWorkspaceWrites() {
   });
 }
 
+async function delayDocumentWrite(filePath: string) {
+  // Exercise the gap between disabling Save and replacing the file on disk.
+  await application.evaluate((_, target) => {
+    const fs = process.getBuiltinModule('fs/promises');
+    const rename = fs.rename;
+    fs.rename = async (...args) => {
+      if (args[1] === target) await new Promise(resolve => setTimeout(resolve, 400));
+      return rename(...args);
+    };
+  }, await realpath(filePath));
+}
+
 test.beforeEach(async () => {
   rendererErrors = [];
   directory = await mkdtemp(path.join(os.tmpdir(), 'slate-desktop-'));
@@ -155,11 +167,13 @@ test('existing files stay unchanged until explicitly saved', async () => {
 });
 
 test('new documents and later edits both require explicit Save', async () => {
+  await delayWorkspaceWrites();
   const target = path.join(directory, 'new-document.md');
   await application.evaluate(({ dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, target);
   await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   const source = page.getByRole('textbox', { name: 'Markdown source' });
   await source.fill('# Unsaved draft\n');
@@ -186,6 +200,7 @@ test('a delayed save cannot target a different open document', async () => {
 });
 
 test('visual text, table edits, and Mermaid source survive saving and reopening', async () => {
+  await delayDocumentWrite(file);
   const cell = page.locator('.document-editor td').filter({ hasText: 'Ready' });
   await cell.click();
   await page.keyboard.press('Home');
@@ -195,6 +210,7 @@ test('visual text, table edits, and Mermaid source survive saving and reopening'
   await expect(diagramSource).toBeVisible();
   await diagramSource.fill('flowchart LR\n  A[Write] --> B[Review]\n  B --> C[Ship]');
   await page.keyboard.press('ControlOrMeta+s');
+  await expect.poll(() => readFile(file, 'utf8')).toContain('Almost Ready');
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   const saved = await readFile(file, 'utf8');
   expect(saved).toContain('Almost Ready');
@@ -217,23 +233,26 @@ test('external writes produce a conflict and Save cannot overwrite them', async 
 });
 
 test('source-only content stays intact and blocks destructive visual conversion', async () => {
+  await delayDocumentWrite(file);
   const markdown = '---\ntitle: Metadata\n---\n\n# Text\n\n<!-- keep this -->\n';
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill(markdown);
   await page.getByRole('tab', { name: 'Visual', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+s');
+  await expect.poll(() => readFile(file, 'utf8')).toBe(markdown);
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
-  expect(await readFile(file, 'utf8')).toBe(markdown);
 });
 
 test('inserting and editing a table writes Markdown, not HTML', async () => {
+  await delayDocumentWrite(file);
   const prose = page.getByRole('textbox', { name: 'Document editor' });
   await prose.click();
   await page.keyboard.press('ControlOrMeta+End');
   await page.getByRole('button', { name: 'Insert table', exact: true }).click();
   await page.keyboard.type('Column A');
   await page.keyboard.press('ControlOrMeta+s');
+  await expect.poll(() => readFile(file, 'utf8')).toContain('Column A');
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   const saved = await readFile(file, 'utf8');
   expect(saved).toContain('Column A');
@@ -577,22 +596,27 @@ test('code files retain external-change protection and reject binary masqueradin
 });
 
 test('Save in the unsaved-changes dialog writes the current file before closing its tab', async () => {
+  await delayWorkspaceWrites();
   await writeFile(path.join(directory, 'next.md'), '# Next document\n');
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Saved before switching\n');
   await page.getByRole('button', { name: 'next.md', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'next.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('button', { name: 'Close sample.md', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Save changes?' });
   await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+s');
+  await expect(dialog).toBeHidden();
   await expect(page.getByRole('heading', { name: 'Next document' })).toBeVisible();
   expect(await readFile(file, 'utf8')).toBe('# Saved before switching\n');
   expect(await page.evaluate(() => localStorage.getItem('slate-unsaved-drafts-v2'))).toBeNull();
 });
 
 test('canceled and failed Save As keep the pending switch and unsaved text intact', async () => {
+  await delayWorkspaceWrites();
   await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# New draft to keep\n');
   await application.evaluate(({ dialog }) => {
@@ -699,6 +723,7 @@ test('closing an untitled document waits for Save As before closing the window',
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, target);
   await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Saved on close\n');
   await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
@@ -802,6 +827,7 @@ test('quitting prompts for each dirty tab, saves one, and preserves another on C
 });
 
 test('visual undo history and raw cursor positions remain local to their tabs', async () => {
+  await delayWorkspaceWrites();
   await writeFile(path.join(directory, 'second.md'), '# Second\n');
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.locator('.document-editor p').first().click();
@@ -820,18 +846,23 @@ test('visual undo history and raw cursor positions remain local to their tabs', 
   const source = page.getByRole('textbox', { name: 'Markdown source' });
   await source.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(5, 9));
   await page.getByRole('tab', { name: 'second.md', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'second.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: /^sample.md/ }).click();
+  await expect(page.getByRole('tab', { name: /^sample.md/ })).toHaveAttribute('aria-selected', 'true');
   await expect.poll(() => source.evaluate((element: HTMLTextAreaElement) => [element.selectionStart, element.selectionEnd])).toEqual([5, 9]);
 });
 
 test('inactive tabs retain external-change detection and prevent overwriting the external file', async () => {
+  await delayWorkspaceWrites();
   await writeFile(path.join(directory, 'second.md'), '# Second\n');
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# First draft\n');
   await page.getByRole('button', { name: 'second.md', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'second.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await writeFile(file, '# External update\n');
   await page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText('This file changed outside Slate. Your edits are still here.')).toBeVisible();
   await page.keyboard.press('ControlOrMeta+s');
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# First draft\n');
