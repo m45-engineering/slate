@@ -39,6 +39,8 @@ async function launch(target?: string) {
       }
     }
   }, Boolean(process.env.CI));
+  // Every desktop test exercises the async workspace boundary, including after restarts.
+  await delayWorkspaceWrites();
 }
 
 async function restart(target?: string) {
@@ -67,6 +69,27 @@ async function delayDocumentWrite(filePath: string) {
       return rename(...args);
     };
   }, await realpath(filePath));
+}
+
+async function openSidebarFile(name: string) {
+  await page.getByRole('button', { name, exact: true }).click();
+  const tab = page.getByRole('tablist', { name: 'Open documents' }).getByRole('tab')
+    .filter({ has: page.getByText(name, { exact: true }) });
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+async function expectActiveFileInFolder(name: string, folder: string) {
+  const tree = page.getByRole('listitem').filter({ has: page.getByRole('button', { name: folder, exact: true }) });
+  await expect(tree.getByRole('button', { name, exact: true })).toHaveAttribute('aria-current', 'page');
+}
+
+async function saveWithShortcut(filePath: string, content: string) {
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect.poll(() => readFile(filePath, 'utf8')).toBe(content);
+  // The file can be written before the save reply and workspace write have finished.
+  await expect(page.getByRole('tablist', { name: 'Open documents' })
+    .getByRole('tab', { selected: true }).locator('.unsaved-dot')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
 }
 
 test.beforeEach(async () => {
@@ -167,7 +190,6 @@ test('existing files stay unchanged until explicitly saved', async () => {
 });
 
 test('new documents and later edits both require explicit Save', async () => {
-  await delayWorkspaceWrites();
   const target = path.join(directory, 'new-document.md');
   await application.evaluate(({ dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
@@ -185,9 +207,7 @@ test('new documents and later edits both require explicit Save', async () => {
   await source.fill('# Saved explicitly\n');
   await page.waitForTimeout(1400);
   expect(await readFile(target, 'utf8')).toBe('# Unsaved draft\n');
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(target, 'utf8')).toBe('# Saved explicitly\n');
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await saveWithShortcut(target, '# Saved explicitly\n');
   await restart();
   await expect(page.getByRole('heading', { name: 'Saved explicitly' })).toBeVisible();
 });
@@ -222,6 +242,41 @@ test('visual text, table edits, and Mermaid source survive saving and reopening'
   await expect(page.getByRole('img', { name: 'Mermaid diagram' })).toContainText('Ship');
 });
 
+test('Mermaid editing keeps the last valid preview and recovers from incomplete source', async () => {
+  const preview = page.getByRole('img', { name: 'Mermaid diagram' });
+  await expect(preview).toBeVisible();
+  await page.getByRole('button', { name: 'Edit diagram', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Mermaid source', exact: true });
+  await source.fill('flowchart LR\n  A[');
+  await expect(page.locator('.diagram-error')).toBeVisible();
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('Review');
+  await expect(source).toHaveValue('flowchart LR\n  A[');
+  expect(await readFile(file, 'utf8')).toBe(original);
+  await source.fill('flowchart LR\n  A[Write] --> B[Review]');
+  await expect(page.locator('.diagram-error')).toHaveCount(0);
+  await expect(preview).toContainText('Review');
+  const diagram = 'flowchart LR\n  A[Write] --> B[Review]\n  B --> C[Ship]';
+  await source.fill(diagram);
+  await expect(preview).toContainText('Ship');
+  await expect(page.locator('.diagram-error')).toHaveCount(0);
+  await expect(source).toBeVisible();
+  await source.fill('flowchart LR\n  A[Write] --> B[Review]');
+  await expect(preview).not.toContainText('Ship');
+  await expect(preview).toContainText('Review');
+  await source.fill(diagram);
+  await expect(preview).toContainText('Ship');
+  await page.locator('.mermaid-block').screenshot({ path: 'tmp/slate-mermaid-preview.png' });
+  await page.getByRole('button', { name: 'Hide source', exact: true }).click();
+  await expect(source).toHaveCount(0);
+  await expect(preview).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect.poll(() => readFile(file, 'utf8')).toContain('```mermaid\n' + diagram + '\n```');
+  await expect(page.getByRole('tab', { name: 'sample.md', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.reload();
+  await expect(preview).toContainText('Ship');
+});
+
 test('external writes produce a conflict and Save cannot overwrite them', async () => {
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# My draft\n');
@@ -239,9 +294,7 @@ test('source-only content stays intact and blocks destructive visual conversion'
   await page.getByRole('textbox', { name: 'Markdown source' }).fill(markdown);
   await page.getByRole('tab', { name: 'Visual', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toBeVisible();
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(file, 'utf8')).toBe(markdown);
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await saveWithShortcut(file, markdown);
 });
 
 test('inserting and editing a table writes Markdown, not HTML', async () => {
@@ -251,6 +304,11 @@ test('inserting and editing a table writes Markdown, not HTML', async () => {
   await page.keyboard.press('ControlOrMeta+End');
   await page.getByRole('button', { name: 'Insert table', exact: true }).click();
   await page.keyboard.type('Column A');
+  const table = page.locator('.document-editor table').filter({ hasText: 'Column A' });
+  await expect(table.locator('tr')).toHaveCount(3);
+  await expect(table.locator('th, td')).toHaveCount(9);
+  await expect(table.locator('td').last()).toHaveCSS('border', '1px solid rgb(212, 212, 212)');
+  await table.screenshot({ path: 'tmp/slate-table-grid.png' });
   await page.keyboard.press('ControlOrMeta+s');
   await expect.poll(() => readFile(file, 'utf8')).toContain('Column A');
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
@@ -268,7 +326,7 @@ test('folder navigation shows context, refreshes, and opens Markdown files', asy
   await expect(page.getByRole('button', { name: 'package.json', exact: true })).toHaveAttribute('aria-disabled', 'false');
   await expect(page.getByRole('button', { name: 'image.png', exact: true })).toHaveAttribute('aria-disabled', 'true');
   await page.getByRole('button', { name: 'notes', exact: true }).click();
-  await page.getByRole('button', { name: 'design.md', exact: true }).click();
+  await openSidebarFile('design.md');
   await expect(page.getByRole('heading', { name: 'Design notes' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'design.md', exact: true })).toHaveAttribute('aria-current', 'page');
   await page.getByRole('tab', { name: 'Outline', exact: true }).click();
@@ -450,8 +508,7 @@ test('discard confirmation uses shadcn and closes only the requested tab', async
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Unsaved edits\n');
   // A slow settings write must not leave a newly displayed tab unable to accept Close.
-  await delayWorkspaceWrites();
-  await page.getByRole('button', { name: 'next.md', exact: true }).click();
+  await openSidebarFile('next.md');
   await expect(page.getByRole('heading', { name: 'Next document' })).toBeVisible();
   await page.getByRole('button', { name: 'Close sample.md', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Save changes?' });
@@ -468,7 +525,7 @@ test('restart restores the last folder and nested file using its latest disk con
   await writeFile(nested, '# Resume this document\n');
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('button', { name: 'notes', exact: true }).click();
-  await page.getByRole('button', { name: 'resume.md', exact: true }).click();
+  await openSidebarFile('resume.md');
   await expect(page.getByRole('heading', { name: 'Resume this document' })).toBeVisible();
   const userData = await application.evaluate(({ app }) => app.getPath('userData'));
   const canonicalFile = await realpath(nested);
@@ -542,13 +599,11 @@ test('source files open from search, save exactly, and restore on restart', asyn
   await expect(source).toBeVisible();
   const updated = '// # Not a Markdown heading\n' + code + '\t// keep indentation  \n';
   await source.fill(updated);
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(target, 'utf8')).toBe(updated);
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await saveWithShortcut(target, updated);
   await restart();
   await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue(updated);
   await expect(page.getByRole('button', { name: 'component.tsx', exact: true })).toHaveAttribute('aria-current', 'page');
-  await page.getByRole('button', { name: 'sample.md', exact: true }).click();
+  await openSidebarFile('sample.md');
   await expect(page.getByRole('heading', { name: 'A real document', exact: true })).toBeVisible();
 });
 
@@ -596,12 +651,11 @@ test('code files retain external-change protection and reject binary masqueradin
 });
 
 test('Save in the unsaved-changes dialog writes the current file before closing its tab', async () => {
-  await delayWorkspaceWrites();
   await writeFile(path.join(directory, 'next.md'), '# Next document\n');
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Saved before switching\n');
-  await page.getByRole('button', { name: 'next.md', exact: true }).click();
+  await openSidebarFile('next.md');
   await expect(page.getByRole('tab', { name: 'next.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('button', { name: 'Close sample.md', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Save changes?' });
@@ -614,7 +668,6 @@ test('Save in the unsaved-changes dialog writes the current file before closing 
 });
 
 test('canceled and failed Save As keep the pending switch and unsaved text intact', async () => {
-  await delayWorkspaceWrites();
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
@@ -739,7 +792,7 @@ test('tabs preserve independent drafts, show blue dots, and save only the active
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# First draft\n');
-  await page.getByRole('button', { name: 'second.ts', exact: true }).click();
+  await openSidebarFile('second.ts');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('textbox', { name: 'Source editor', exact: true }).fill('const draft = 2;\n');
   const firstTab = page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true });
@@ -748,14 +801,13 @@ test('tabs preserve independent drafts, show blue dots, and save only the active
   await expect(secondTab.locator('.unsaved-dot')).toBeVisible();
   await firstTab.click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# First draft\n');
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(file, 'utf8')).toBe('# First draft\n');
+  await saveWithShortcut(file, '# First draft\n');
   expect(await readFile(second, 'utf8')).toBe('const original = 1;\n');
   await expect(page.getByRole('tab', { name: 'sample.md', exact: true })).toBeVisible();
   await expect(secondTab).toBeVisible();
   await secondTab.click();
   await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue('const draft = 2;\n');
-  await page.getByRole('button', { name: 'sample.md', exact: true }).click();
+  await openSidebarFile('sample.md');
   await expect(page.getByRole('tablist', { name: 'Open documents' }).getByRole('tab')).toHaveCount(2);
   await page.screenshot({ path: 'tmp/slate-tabs.png' });
 });
@@ -766,7 +818,7 @@ test('tab menu closes others, honors Cancel, and closes all with explicit discar
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# First dirty\n');
-  await page.getByRole('button', { name: 'second.md', exact: true }).click();
+  await openSidebarFile('second.md');
   const tab = page.getByRole('tab', { name: 'second.md', exact: true });
   await tab.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Close Others', exact: true }).click();
@@ -793,11 +845,10 @@ test('tab menu closes others, honors Cancel, and closes all with explicit discar
 test('dragging tabs changes their order and restores that order on restart', async () => {
   for (const name of ['second.md', 'third.md']) await writeFile(path.join(directory, name), `# ${name}\n`);
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
-  for (const name of ['second.md', 'third.md']) await page.getByRole('button', { name, exact: true }).click();
+  for (const name of ['second.md', 'third.md']) await openSidebarFile(name);
   const tablist = page.getByRole('tablist', { name: 'Open documents' });
   await expect(tablist.getByRole('tab')).toHaveText(['sample.md', 'second.md', 'third.md']);
   // Restart immediately after the displayed reorder, even when saving the order is slow.
-  await delayWorkspaceWrites();
   await tablist.getByRole('tab', { name: 'third.md', exact: true }).dragTo(tablist.getByRole('tab', { name: 'sample.md', exact: true }), { targetPosition: { x: 3, y: 10 } });
   await expect(tablist.getByRole('tab')).toHaveText(['third.md', 'sample.md', 'second.md']);
   await expect(tablist.getByRole('tab', { name: 'third.md', exact: true })).toHaveAttribute('aria-selected', 'true');
@@ -811,7 +862,7 @@ test('quitting prompts for each dirty tab, saves one, and preserves another on C
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Save first\n');
-  await page.getByRole('button', { name: 'second.md', exact: true }).click();
+  await openSidebarFile('second.md');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Keep second\n');
   await application.evaluate(({ app }) => { app.quit(); });
@@ -827,7 +878,6 @@ test('quitting prompts for each dirty tab, saves one, and preserves another on C
 });
 
 test('visual undo history and raw cursor positions remain local to their tabs', async () => {
-  await delayWorkspaceWrites();
   await writeFile(path.join(directory, 'second.md'), '# Second\n');
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.locator('.document-editor p').first().click();
@@ -835,7 +885,7 @@ test('visual undo history and raw cursor positions remain local to their tabs', 
   await page.keyboard.type('Unique edit');
   await expect(page.getByRole('textbox', { name: 'Document editor' })).toContainText('Unique edit');
   await expect(page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'second.md', exact: true }).click();
+  await openSidebarFile('second.md');
   await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
   await expect(page.getByRole('heading', { name: 'Second', exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true }).click();
@@ -853,12 +903,11 @@ test('visual undo history and raw cursor positions remain local to their tabs', 
 });
 
 test('inactive tabs retain external-change detection and prevent overwriting the external file', async () => {
-  await delayWorkspaceWrites();
   await writeFile(path.join(directory, 'second.md'), '# Second\n');
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# First draft\n');
-  await page.getByRole('button', { name: 'second.md', exact: true }).click();
+  await openSidebarFile('second.md');
   await expect(page.getByRole('tab', { name: 'second.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await writeFile(file, '# External update\n');
   await page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true }).click();
@@ -875,7 +924,7 @@ test('recovery retains every dirty tab across a crash without writing either ori
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# First recovered\n');
-  await page.getByRole('button', { name: 'second.ts', exact: true }).click();
+  await openSidebarFile('second.ts');
   await page.getByRole('textbox', { name: 'Source editor', exact: true }).fill('const recovered = 2;\n');
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('slate-unsaved-drafts-v2') || '[]').length)).toBe(2);
   await application.evaluate(({ session }) => { session.defaultSession.flushStorageData(); });
@@ -910,7 +959,7 @@ test('code highlighting is readable, stays aligned while scrolling and zooming, 
   const code = '// A readable comment\nexport function greet(name: string): string {\n\tconst message = "Hello, " + name;\n\treturn message;\n}\nconst longLine = "' + 'wide text '.repeat(60) + '";\n';
   await writeFile(target, code);
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
-  await page.getByRole('button', { name: 'highlight.ts', exact: true }).click();
+  await openSidebarFile('highlight.ts');
   const input = page.getByRole('textbox', { name: 'Source editor', exact: true });
   const preview = page.locator('.syntax-highlight');
   await expect(preview.locator('.hljs-keyword').first()).toBeVisible();
@@ -937,8 +986,7 @@ test('code highlighting is readable, stays aligned while scrolling and zooming, 
   expect(metrics.inputY).toBe(metrics.previewY);
   await input.fill(code + '// <script> stays literal & unchanged\n');
   await expect(preview.locator('.hljs-comment').last()).toHaveText('// <script> stays literal & unchanged');
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(target, 'utf8')).toBe(code + '// <script> stays literal & unchanged\n');
+  await saveWithShortcut(target, code + '// <script> stays literal & unchanged\n');
   await page.screenshot({ path: 'tmp/slate-syntax-highlighting.png' });
 });
 
@@ -954,7 +1002,7 @@ test('highlighting follows the file type and never executes markup', async () =>
   for (const [name, content] of samples) await writeFile(path.join(directory, name), content);
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   for (const [name, content, selector] of samples) {
-    await page.getByRole('button', { name, exact: true }).click();
+    await openSidebarFile(name);
     await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue(content);
     await expect(page.locator(`.syntax-highlight ${selector}`).first()).toBeVisible();
     await expect(page.locator('.syntax-highlight')).toHaveText(content);
@@ -967,7 +1015,7 @@ test('plain text and large code files remain readable without a highlighting ove
   for (const [name, content] of [['notes.txt', 'const plain = "still plain text";\n'], ['large.ts', '// ' + 'x'.repeat(200_001)]]) {
     await writeFile(path.join(directory, name), content);
     await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
-    await page.getByRole('button', { name, exact: true }).click();
+    await openSidebarFile(name);
     const input = page.getByRole('textbox', { name: 'Source editor', exact: true });
     await expect(input).toHaveValue(content);
     await expect(input).toHaveCSS('color', 'rgb(24, 24, 24)');
@@ -988,10 +1036,30 @@ test('sidebar rename keeps an open draft and updates its tab and filename search
   await expect(source).toHaveValue('# Draft after rename\n');
   await expect.poll(() => readFile(path.join(directory, 'guide.md'), 'utf8')).toBe(original);
   await expect(readFile(file, 'utf8')).rejects.toThrow();
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(path.join(directory, 'guide.md'), 'utf8')).toBe('# Draft after rename\n');
+  await saveWithShortcut(path.join(directory, 'guide.md'), '# Draft after rename\n');
   await page.getByRole('textbox', { name: 'Find file by name', exact: true }).fill('guide');
   await expect(page.getByRole('button', { name: /guide.md/ })).toBeVisible();
+});
+
+test('a moved file accepts Save immediately when its new path is announced', async () => {
+  await mkdir(path.join(directory, 'archive'));
+  const content = '# Saved immediately after move\n';
+  const result = await page.evaluate(async draft => {
+    const bridge = window.slate!;
+    const saved = new Promise<Awaited<ReturnType<typeof bridge.save>>>(resolve => {
+      const unsubscribe = bridge.onDocument(workspace => {
+        unsubscribe();
+        const active = workspace.documents.find(item => item.id === workspace.activeId)!;
+        void bridge.save(draft, false, { id: active.id, path: active.path }).then(resolve);
+      });
+    });
+    const moved = await bridge.moveEntry('sample.md', 'archive');
+    return { moved, saved: await saved };
+  }, content);
+  expect(result.moved.changed).toBe(true);
+  expect(result.saved.canceled).not.toBe(true);
+  expect(result.saved.document?.content).toBe(content);
+  expect(await readFile(path.join(directory, 'archive', 'sample.md'), 'utf8')).toBe(content);
 });
 
 test('sidebar move uses the folder picker and keeps edits associated with the moved file', async () => {
@@ -1006,9 +1074,9 @@ test('sidebar move uses the folder picker and keeps edits associated with the mo
   await page.getByRole('menuitem', { name: 'Move…', exact: true }).click();
   const target = path.join(destination, 'sample.md');
   await expect.poll(() => readFile(target, 'utf8').catch(() => null)).toBe(original);
+  await expectActiveFileInFolder('sample.md', 'archive');
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Moved draft\n');
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(target, 'utf8')).toBe('# Moved draft\n');
+  await saveWithShortcut(target, '# Moved draft\n');
   await expect(readFile(file, 'utf8')).rejects.toThrow();
   await expect(page.getByRole('button', { name: 'sample.md', exact: true })).toHaveAttribute('aria-current', 'page');
 });
@@ -1033,10 +1101,10 @@ test('renaming a folder updates both active and inactive open drafts', async () 
   await writeFile(path.join(notes, 'second.ts'), 'const second = 1;\n');
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('button', { name: 'notes', exact: true }).click();
-  await page.getByRole('button', { name: 'first.md', exact: true }).click();
+  await openSidebarFile('first.md');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# First draft\n');
-  await page.getByRole('button', { name: 'second.ts', exact: true }).click();
+  await openSidebarFile('second.ts');
   await page.getByRole('textbox', { name: 'Source editor', exact: true }).fill('const second = 2;\n');
   await page.getByRole('button', { name: 'notes', exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Rename…', exact: true }).click();
@@ -1045,12 +1113,10 @@ test('renaming a folder updates both active and inactive open drafts', async () 
   await dialog.getByRole('button', { name: 'Rename', exact: true }).click();
   await expect(page.getByRole('button', { name: 'renamed-notes', exact: true })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue('const second = 2;\n');
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(path.join(directory, 'renamed-notes', 'second.ts'), 'utf8')).toBe('const second = 2;\n');
+  await saveWithShortcut(path.join(directory, 'renamed-notes', 'second.ts'), 'const second = 2;\n');
   await page.getByRole('tab', { name: 'first.md, unsaved changes', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# First draft\n');
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(path.join(directory, 'renamed-notes', 'first.md'), 'utf8')).toBe('# First draft\n');
+  await saveWithShortcut(path.join(directory, 'renamed-notes', 'first.md'), '# First draft\n');
 });
 
 test('sidebar Delete confirms Trash and preserves a dirty file when canceled', async () => {
@@ -1113,8 +1179,7 @@ test('renaming a Markdown file to a code extension keeps its unsaved source edit
   await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue('const value = "Keep this";\n');
   await expect(page.locator('.syntax-highlight .hljs-keyword')).toHaveText('const');
   await expect(page.getByRole('tab', { name: 'sample.ts, unsaved changes', exact: true })).toBeVisible();
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(path.join(directory, 'sample.ts'), 'utf8')).toBe('const value = "Keep this";\n');
+  await saveWithShortcut(path.join(directory, 'sample.ts'), 'const value = "Keep this";\n');
 });
 
 test('sidebar creates a file at the workspace root and opens it without disturbing another draft', async () => {
@@ -1128,8 +1193,7 @@ test('sidebar creates a file at the workspace root and opens it without disturbi
   await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue('');
   expect(await readFile(path.join(directory, 'created.ts'), 'utf8')).toBe('');
   await page.getByRole('textbox', { name: 'Source editor', exact: true }).fill('const created = true;\n');
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(path.join(directory, 'created.ts'), 'utf8')).toBe('const created = true;\n');
+  await saveWithShortcut(path.join(directory, 'created.ts'), 'const created = true;\n');
   await page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Keep my existing draft\n');
   expect(await readFile(file, 'utf8')).toBe(original);
@@ -1180,10 +1244,10 @@ test('dragging a file into a folder and back to the root preserves its open draf
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Dragged draft\n');
   await page.getByRole('button', { name: 'sample.md', exact: true }).dragTo(page.getByRole('button', { name: 'archive', exact: true }));
   await expect.poll(() => readFile(path.join(archive, 'sample.md'), 'utf8').catch(() => null)).toBe(original);
+  await expectActiveFileInFolder('sample.md', 'archive');
   await expect(page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Dragged draft\n');
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(path.join(archive, 'sample.md'), 'utf8')).toBe('# Dragged draft\n');
+  await saveWithShortcut(path.join(archive, 'sample.md'), '# Dragged draft\n');
   await page.getByRole('button', { name: 'sample.md', exact: true }).dragTo(page.getByLabel('Workspace folder', { exact: true }));
   await expect.poll(() => readFile(file, 'utf8').catch(() => null)).toBe('# Dragged draft\n');
   await expect(readFile(path.join(archive, 'sample.md'), 'utf8')).rejects.toThrow();
@@ -1198,20 +1262,19 @@ test('dragging a folder moves all children and keeps both open tabs associated w
   await writeFile(path.join(notes, 'two.ts'), 'const value = 1;\n');
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('button', { name: 'notes', exact: true }).click();
-  await page.getByRole('button', { name: 'one.md', exact: true }).click();
+  await openSidebarFile('one.md');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# One draft\n');
-  await page.getByRole('button', { name: 'two.ts', exact: true }).click();
+  await openSidebarFile('two.ts');
   await page.getByRole('textbox', { name: 'Source editor', exact: true }).fill('const value = 2;\n');
   await page.getByRole('button', { name: 'notes', exact: true }).dragTo(page.getByRole('button', { name: 'archive', exact: true }));
   await expect.poll(() => readFile(path.join(archive, 'notes', 'two.ts'), 'utf8').catch(() => null)).toBe('const value = 1;\n');
+  await expectActiveFileInFolder('two.ts', 'archive');
   await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue('const value = 2;\n');
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(path.join(archive, 'notes', 'two.ts'), 'utf8')).toBe('const value = 2;\n');
+  await saveWithShortcut(path.join(archive, 'notes', 'two.ts'), 'const value = 2;\n');
   await page.getByRole('tab', { name: 'one.md, unsaved changes', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# One draft\n');
-  await page.keyboard.press('ControlOrMeta+s');
-  await expect.poll(() => readFile(path.join(archive, 'notes', 'one.md'), 'utf8')).toBe('# One draft\n');
+  await saveWithShortcut(path.join(archive, 'notes', 'one.md'), '# One draft\n');
   await expect(readFile(path.join(notes, 'one.md'), 'utf8')).rejects.toThrow();
 });
 
