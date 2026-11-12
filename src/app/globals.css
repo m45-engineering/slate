@@ -160,7 +160,7 @@ button svg { flex-shrink: 0; }
 .document-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--ui-muted); float: left; height: 0; pointer-events: none; }
 .document-editor :not(pre):not(code) > code { font-family: var(--font-geist-mono), monospace; font-size: .85em; background: var(--ui-surface); padding: 2px 5px; border-radius: 3px; }
 .document-editor table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 23px 0; font-size: 13px; line-height: 1.7; overflow: hidden; }
-.document-editor td, .document-editor th { border: 0; min-width: 40px; padding: 11px 14px; position: relative; vertical-align: top; }
+.document-editor td, .document-editor th { border: 1px solid #d4d4d4; min-width: 40px; padding: 11px 14px; position: relative; vertical-align: top; }
 .document-editor th { font-weight: 550; background: var(--ui-surface); text-align: left; }
 .document-editor td p, .document-editor th p { margin: 0; }
 .document-editor .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgb(0 0 0 / 8%); pointer-events: none; }
@@ -210,12 +210,10 @@ button svg { flex-shrink: 0; }
   .source-editor textarea.has-highlighting { color: CanvasText; caret-color: auto; }
 }
 .statusbar { height: 32px; min-height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; font-size: 11px; color: var(--ui-muted); }
-.statusbar > span { display: flex; align-items: center; }
-.statusbar > span:last-child { min-width: 160px; justify-content: flex-end; }
-.status-divider { padding: 0 9px; }
-.footer-document { display: flex; align-items: center; min-width: 0; max-width: 45%; overflow: hidden; white-space: nowrap; }
-.footer-document > span:first-child { overflow: hidden; text-overflow: ellipsis; }
-.footer-document .save-status { flex-shrink: 0; }
+.footer-links { display: flex; align-items: center; gap: 8px; }
+.footer-link { height: 26px; padding: 0 4px; font-size: 11px; }
+.footer-github { width: 26px; height: 26px; }
+.footer-github img { pointer-events: none; }
 .zoom-control { height: 26px; padding: 0 4px; gap: 5px; font-size: 12px; }
 .notice { padding: 8px 24px; display: flex; align-items: center; gap: 12px; background: var(--ui-surface); font-size: 13px; flex-shrink: 0; }
 .notice > span { flex: 1; }

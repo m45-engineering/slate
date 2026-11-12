@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import CodeBlock from '@tiptap/extension-code-block';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { Button } from './ui/button';
@@ -13,6 +13,7 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeViewProps
   const [svg, setSvg] = useState('');
   const [error, setError] = useState('');
   const id = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const renderSequence = useRef(0);
 
   useEffect(() => {
     if (!isMermaid) return;
@@ -25,10 +26,11 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeViewProps
           theme: 'base', fontFamily: 'Geist, sans-serif',
           themeVariables: { primaryColor: '#f7f7f7', primaryTextColor: '#181818', primaryBorderColor: '#d4d4d4', lineColor: '#858585', fontSize: '14px' },
         });
-        const result = await mermaid.render(`diagram${id}`, node.textContent);
+        // Mermaid removes existing DOM elements with the render ID. Keep the visible SVG intact.
+        const result = await mermaid.render(`diagram${id}-${++renderSequence.current}`, node.textContent);
         if (!canceled) { setSvg(result.svg); setError(''); }
       } catch {
-        if (!canceled) { setSvg(''); setError('This diagram needs a small correction. Edit the Mermaid source to continue.'); }
+        if (!canceled) setError('The Mermaid source is incomplete or invalid.');
       }
     }, 300);
     return () => { canceled = true; clearTimeout(timer); };
@@ -58,7 +60,8 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeViewProps
       }}
     /></div>}
     {isMermaid && <div className="diagram-preview" contentEditable={false}>
-      {error ? <p className="diagram-error" role="status">{error}</p> : svg ? <div role="img" aria-label="Mermaid diagram" dangerouslySetInnerHTML={{ __html: svg }} /> : <p className="diagram-loading">Drawing your diagram…</p>}
+      {svg ? <div role="img" aria-label="Mermaid diagram" dangerouslySetInnerHTML={{ __html: svg }} /> : !error && <p className="diagram-loading">Drawing your diagram…</p>}
+      {error && <p className="diagram-error" role="status">{error} {svg ? 'Showing the last valid diagram.' : 'Edit the source to draw a preview.'}</p>}
     </div>}
   </NodeViewWrapper>;
 }

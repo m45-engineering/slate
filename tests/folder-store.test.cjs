@@ -59,6 +59,63 @@ test('filename search includes text and source without expanding folders and ref
   assert.equal((await store.search('no-such-file')).total, 0);
 });
 
+test('filename search reaches matches beyond 50,000 entries and reuses the complete index', async t => {
+  const { store } = await fixture(t);
+  const entry = name => ({ name, isDirectory: () => false, isFile: () => true });
+  const children = Array.from({ length: 50_010 }, (_, i) => entry(`asset-${i}.bin`));
+  children.push(entry('needle-late.md'));
+  let reads = 0;
+  t.mock.method(fs, 'opendir', async directory => {
+    assert.equal(directory, store.root);
+    reads++;
+    return { async *[Symbol.asyncIterator]() { yield* children; } };
+  });
+  const result = await store.search('needle-');
+  assert.deepEqual(result.entries.map(item => item.path), ['needle-late.md']);
+  assert.equal(result.total, 1);
+  assert.equal(result.unreadableFolders, 0);
+  assert.equal((await store.search('NEEDLE')).total, 1);
+  assert.equal(reads, 1);
+});
+
+test('filename search reports unreadable subfolders without hiding readable matches', async t => {
+  const { store } = await fixture(t);
+  const opendir = fs.opendir;
+  t.mock.method(fs, 'opendir', async (directory, options) => {
+    if (directory === path.join(store.root, 'docs')) throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+    return opendir(directory, options);
+  });
+  const result = await store.search('README');
+  assert.equal(result.total, 1);
+  assert.equal(result.unreadableFolders, 1);
+});
+
+test('switching folders cancels an old scan without discarding the new cached index', async t => {
+  const { store } = await fixture(t);
+  const previousRoot = store.root;
+  const nextRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'slate-search-next-'));
+  t.after(() => fs.rm(nextRoot, { recursive: true, force: true }));
+  await fs.writeFile(path.join(nextRoot, 'fresh.md'), '# Fresh');
+  let release;
+  const waiting = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
+  const opendir = fs.opendir;
+  let reads = 0;
+  t.mock.method(fs, 'opendir', async (directory, options) => {
+    reads++;
+    if (directory === previousRoot) await waiting;
+    return opendir(directory, options);
+  });
+  const canceled = assert.rejects(store.search('README'), { name: 'AbortError' });
+  await store.open(nextRoot);
+  assert.equal((await store.search('fresh')).total, 1);
+  release();
+  await canceled;
+  const previousReads = reads;
+  assert.equal((await store.search('fresh')).total, 1);
+  assert.equal(reads, previousReads);
+});
+
 test('renames and moves files and folders, preserving contents and refreshing search', async t => {
   const { root, store } = await fixture(t);
   await store.search('design');

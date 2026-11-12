@@ -2,6 +2,7 @@
   "name": "slate-desktop",
   "version": "0.1.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "description": "A quiet place to write. A local Markdown editor for people and their tools.",
   "author": "M45 Engineering",
@@ -78,6 +79,8 @@
     "files": [
       "out/**/*",
       "electron/**/*",
+      "LICENSE",
+      "NOTICE",
       "package.json",
       "!node_modules/**/*"
     ],

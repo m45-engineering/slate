@@ -13,12 +13,19 @@ function validateName(name) {
 class FolderStore {
   root = null;
   searchIndex = null;
+  searchAbort = null;
+
+  invalidateSearchIndex() {
+    this.searchAbort?.abort();
+    this.searchAbort = null;
+    this.searchIndex = null;
+  }
 
   async open(folderPath) {
     const root = await fs.realpath(folderPath);
     if (!(await fs.stat(root)).isDirectory()) throw new Error('Choose a folder.');
     this.root = root;
-    this.searchIndex = null;
+    this.invalidateSearchIndex();
     return this.snapshot();
   }
 
@@ -53,7 +60,7 @@ class FolderStore {
       throw new Error('A file or folder with that name already exists. Nothing was replaced.');
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
     await fs.rename(from, destination);
-    this.searchIndex = null;
+    this.invalidateSearchIndex();
     return { from, to: destination };
   }
 
@@ -73,7 +80,7 @@ class FolderStore {
   async trash(relativePath, trashItem) {
     const from = await this.resolveEntry(relativePath);
     await trashItem(from);
-    this.searchIndex = null;
+    this.invalidateSearchIndex();
     return { from, to: null };
   }
 
@@ -91,7 +98,7 @@ class FolderStore {
       if (error.code === 'EEXIST') throw new Error('A file or folder with that name already exists. Nothing was replaced.');
       throw error;
     }
-    this.searchIndex = null;
+    this.invalidateSearchIndex();
     return { absolute, path: path.relative(this.root, absolute).split(path.sep).join('/') };
   }
 
@@ -113,21 +120,26 @@ class FolderStore {
     };
   }
 
-  async buildSearchIndex() {
+  async buildSearchIndex(signal) {
     if (!this.root) throw new Error('Open a folder first.');
     const root = this.root;
     const queue = [root];
     const entries = [];
-    let visited = 0;
-    while (queue.length && visited < 50000) {
+    let unreadableFolders = 0;
+    while (queue.length) {
+      signal.throwIfAborted();
       const directory = queue.pop();
       let children;
-      try { children = await fs.readdir(directory, { withFileTypes: true }); }
-      catch { continue; } // A folder may be removed or become unreadable during indexing.
-      for (const child of children) {
+      // Read in batches so a wide folder does not need one enormous directory listing.
+      try { children = await fs.opendir(directory, { bufferSize: 256 }); }
+      catch (error) {
+        if (directory === root) throw error;
+        unreadableFolders++;
+        continue;
+      }
+      for await (const child of children) {
+        signal.throwIfAborted();
         if (HIDDEN_DIRECTORIES.has(child.name)) continue;
-        visited++;
-        if (visited > 50000) break;
         const absolute = path.join(directory, child.name);
         if (child.isDirectory()) queue.push(absolute);
         else if (child.isFile() && isTextFile(child.name)) entries.push({
@@ -135,18 +147,27 @@ class FolderStore {
         });
       }
     }
-    return { entries, truncated: visited > 50000 || queue.length > 0 };
+    signal.throwIfAborted();
+    return { entries, unreadableFolders };
   }
 
   async search(query, refresh = false) {
     if (typeof query !== 'string' || query.length > 200) throw new Error('Enter a filename of up to 200 characters.');
-    if (refresh) this.searchIndex = null;
-    this.searchIndex ??= this.buildSearchIndex().catch(error => { this.searchIndex = null; throw error; });
+    if (refresh) this.invalidateSearchIndex();
+    if (!this.searchIndex) {
+      const controller = new AbortController();
+      this.searchAbort = controller;
+      this.searchIndex = this.buildSearchIndex(controller.signal).catch(error => {
+        // A canceled older scan must not discard a newer folder's index.
+        if (this.searchAbort === controller) this.invalidateSearchIndex();
+        throw error;
+      });
+    }
     const index = await this.searchIndex;
     const term = query.trim().toLowerCase();
     const matches = index.entries.filter(entry => entry.path.toLowerCase().includes(term));
     matches.sort((a, b) => Number(!a.name.toLowerCase().startsWith(term)) - Number(!b.name.toLowerCase().startsWith(term)) || a.path.localeCompare(b.path));
-    return { entries: matches.slice(0, 100), total: matches.length, truncated: index.truncated };
+    return { entries: matches.slice(0, 100), total: matches.length, unreadableFolders: index.unreadableFolders };
   }
 }
 

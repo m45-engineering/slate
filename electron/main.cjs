@@ -292,6 +292,7 @@ async function changeEntry(relativePath, operation, deleting = false) {
   // A Save As during confirmation may move a tab's file outside the deleted item.
   affected = affected.filter(isAffected);
   for (const record of affected) stopWatching(record);
+  let notice;
   try {
     const result = await operation();
     for (const record of affected) {
@@ -303,12 +304,14 @@ async function changeEntry(relativePath, operation, deleting = false) {
     }
     if (!documents.has(activeId)) activeId = ([...documents.values()][0] ?? addDocument()).id;
     updateWindow();
-    send('document:loaded', snapshot());
-    await rememberSession();
-    return { changed: true };
+    notice = await rememberSession(false);
   } finally {
     for (const record of affected) if (documents.has(record.id)) watchDocument(record);
   }
+  // A displayed new path must be ready for Save, with persistence and watchers settled.
+  send('document:loaded', snapshot());
+  if (notice) send('document:error', notice);
+  return { changed: true };
 }
 handle('folder:rename', (relativePath, name) => exclusive(async () => {
   const from = await folder.resolveEntry(relativePath);
