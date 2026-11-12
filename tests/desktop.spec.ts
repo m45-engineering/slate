@@ -1610,6 +1610,9 @@ test('find navigates visual matches, preserves formatting on replace, and undoes
   const search = page.getByRole('search', { name: 'Find in document' });
   const query = search.getByRole('textbox', { name: 'Find text', exact: true });
   await expect(query).toBeFocused();
+  await search.getByRole('textbox', { name: 'Replace with', exact: true }).focus();
+  await application.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('replace')?.click());
+  await expect(query).toBeFocused();
   await query.fill('hello world');
   await page.screenshot({ path: 'tmp/slate-find-visual.png' });
   await expect(search.getByRole('status')).toHaveText('1 of 3');

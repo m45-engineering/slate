@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { Editor } from '@tiptap/react';
 import { closeHistory } from '@tiptap/pm/history';
 import { findInDocument, findText } from '@/lib/find';
@@ -19,6 +19,7 @@ export function useFindReplace({ editor, source, mode, documentId, sourceInput, 
   const [replacement, setReplacement] = useState('');
   const [matchCase, setMatchCase] = useState(false);
   const [anchor, setAnchor] = useState(0);
+  const [focusRequest, setFocusRequest] = useState(0);
   const findInput = useRef<HTMLInputElement>(null);
   const doc = editor?.state.doc;
   const matches = useMemo(() => !open ? [] : mode === 'visual' && doc
@@ -27,6 +28,12 @@ export function useFindReplace({ editor, source, mode, documentId, sourceInput, 
   const current = matches[active];
 
   useEffect(() => { setAnchor(0); }, [documentId, mode]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    findInput.current?.focus();
+    findInput.current?.select();
+  }, [open, focusRequest]);
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
@@ -62,7 +69,7 @@ export function useFindReplace({ editor, source, mode, documentId, sourceInput, 
     if (selection && !selection.includes('\n')) { setQuery(selection); setAnchor(0); }
     setOpen(true);
     setReplaceOpen(replace);
-    requestAnimationFrame(() => { findInput.current?.focus(); findInput.current?.select(); });
+    setFocusRequest(value => value + 1);
   }, [editor, mode, source, sourceInput]);
 
   const close = () => {
