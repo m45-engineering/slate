@@ -52,6 +52,7 @@ export function sourceOnlyReason(markdown: string): string | null {
   if (/^(?:\ufeff)?---\s*\n[\s\S]*?\n(?:---|\.\.\.)\s*(?:\n|$)/.test(markdown)) return 'YAML front matter';
   if (/^(?:\ufeff)?\+\+\+\s*\n/.test(markdown)) return 'TOML front matter';
   let fence: { char: string; length: number } | null = null;
+  // Fenced and inline code are literal: shell variables and example markup are not math or HTML.
   const prose = markdown.split('\n').filter(line => {
     const match = line.match(/^\s*(`{3,}|~{3,})/);
     if (match) {
@@ -60,10 +61,10 @@ export function sourceOnlyReason(markdown: string): string | null {
       return false;
     }
     return !fence;
-  }).join('\n');
+  }).join('\n').replace(/(?<![\\`])(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)/g, span => span.replace(/[^\n]/g, ' '));
   if (/<!--|<\/?[a-z][^>]*>/i.test(prose)) return 'HTML';
   if (/!\[[^\]]*\]/.test(prose)) return 'images';
   if (/^\s{0,3}\[[^\]]+\]:/m.test(prose)) return 'reference definitions or footnotes';
-  if (/^\s*\$\$|\$[^\n$]+\$/m.test(prose)) return 'math notation';
+  if (/^\s*\$\$|(?<!\\)\$(?![\s$])[^\n$]*[^\s$\\]\$(?!\d)/m.test(prose)) return 'math notation';
   return null;
 }

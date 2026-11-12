@@ -7,5 +7,7 @@
 - Open web links in the default browser and distinguish them with blue, underlined text.
 - Make heading levels more distinct through size, weight, and spacing. Widen Visual view and use 15px body text.
 - Remove the conflicting Visual/Markdown keyboard shortcut; the tabs and View menu remain available.
+- Keep shell variables and other inline code from being mistaken for math or unsupported Markdown.
+- Retry temporary Windows file locks during Save while preserving external-change checks and unsaved edits.
 
 PDF export supports the same Markdown subset as Visual view. Images, embedded HTML, front matter, reference definitions, footnotes, and math are not yet supported. The macOS installer is ad-hoc signed without notarization; the Windows installer is unsigned.

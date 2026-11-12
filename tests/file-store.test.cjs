@@ -44,6 +44,55 @@ test('externally deleted files are treated as conflicts', async t => {
   await assert.rejects(fs.access(file));
 });
 
+test('Save retries temporary Windows file locks without losing edits', async t => {
+  const { file, document } = await fixture(t);
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  t.after(() => Object.defineProperty(process, 'platform', platform));
+  const rename = fs.rename;
+  let attempts = 0;
+  t.mock.method(fs, 'rename', async (...args) => {
+    if (++attempts <= 2) throw Object.assign(new Error('File is locked'), { code: 'EPERM' });
+    return rename(...args);
+  });
+  assert.ok((await writeDocument(file, '# Saved after lock\n', document)).document);
+  assert.equal(attempts, 3);
+  assert.equal(await fs.readFile(file, 'utf8'), '# Saved after lock\n');
+});
+
+test('a Windows save retry preserves an external edit made while the file was locked', async t => {
+  const { file, directory, document } = await fixture(t);
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  t.after(() => Object.defineProperty(process, 'platform', platform));
+  let attempts = 0;
+  t.mock.method(fs, 'rename', async () => {
+    attempts++;
+    await fs.writeFile(file, '# External edit\n');
+    throw Object.assign(new Error('File is locked'), { code: 'EPERM' });
+  });
+  assert.deepEqual(await writeDocument(file, '# My unsaved edit\n', document), { conflict: true });
+  assert.equal(attempts, 1);
+  assert.equal(await fs.readFile(file, 'utf8'), '# External edit\n');
+  assert.deepEqual(await fs.readdir(directory), ['document.md']);
+});
+
+test('permanent Windows file locks fail safely after bounded retries', async t => {
+  const { file, directory, document } = await fixture(t);
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  t.after(() => Object.defineProperty(process, 'platform', platform));
+  let attempts = 0;
+  t.mock.method(fs, 'rename', async () => {
+    attempts++;
+    throw Object.assign(new Error('File is locked'), { code: 'EPERM' });
+  });
+  await assert.rejects(writeDocument(file, '# My unsaved edit\n', document), { code: 'EPERM' });
+  assert.equal(attempts, 6);
+  assert.equal(await fs.readFile(file, 'utf8'), '# Original\n');
+  assert.deepEqual(await fs.readdir(directory), ['document.md']);
+});
+
 test('saving a copy leaves the externally edited original intact', async t => {
   const { file, directory, document } = await fixture(t);
   const copy = path.join(directory, 'copy.md');
@@ -110,4 +159,20 @@ test('source-only detection protects metadata, HTML, references, math, and image
   assert.equal(sourceOnlyReason('```html\n<div>Example</div>\n```'), null);
   assert.equal(sourceOnlyReason('````markdown\n```html\n<div>Example</div>\n```\n````'), null);
   assert.equal(sourceOnlyReason('# Hello\n\n| A | B |\n| - | - |\n| 1 | 2 |'), null);
+});
+
+test('inline code and prices do not trigger unsupported Markdown warnings', async () => {
+  const { sourceOnlyReason } = await import('../src/lib/document.ts');
+  for (const source of [
+    '`$HOME` means your home folder. For example, `$HOME/app`.',
+    'Run `printf "$HOME $PATH"` in Terminal.',
+    'Use ``a `backtick` and $HOME $PATH`` literally.',
+    '`<div>example</div>` and `![image](example.png)` are code.',
+    'The price is $5 or $10.',
+    'The range is $5–$10.',
+    'Escaped \\$x + y\\$ is literal.',
+  ]) assert.equal(sourceOnlyReason(source), null, source);
+  for (const source of ['$x$', '$x^2 + y^2$', '$$\nx^2\n$$', '`$HOME` alongside $x^2$']) {
+    assert.equal(sourceOnlyReason(source), 'math notation', source);
+  }
 });

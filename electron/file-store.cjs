@@ -66,9 +66,16 @@ async function writeDocument(filePath, content, previous = null) {
     } finally {
       await handle.close();
     }
-    // Recheck just before replacement: a tool may have saved while the temp file was written.
-    if (previous?.path === filePath && !(await diskMatches(previous))) return { conflict: true };
-    await fs.rename(temp, filePath);
+    for (let attempt = 0; ; attempt++) {
+      // Recheck on every attempt so an external edit during a Windows file lock is preserved.
+      if (previous?.path === filePath && !(await diskMatches(previous))) return { conflict: true };
+      try { await fs.rename(temp, filePath); break; }
+      catch (error) {
+        // Windows indexers and virus scanners can briefly hold the destination open.
+        if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || attempt >= 5) throw error;
+        await new Promise(resolve => setTimeout(resolve, 25 * 2 ** attempt));
+      }
+    }
   } finally {
     await fs.rm(temp, { force: true });
   }

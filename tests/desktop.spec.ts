@@ -196,6 +196,19 @@ test('web links are blue and open the default browser without navigating the edi
   expect(await readFile(file, 'utf8')).toBe(original);
 });
 
+test('shell variables inside inline code remain available in Visual view', async () => {
+  const guide = '# Installation guide\n\n`$HOME` is your home folder. Use `$HOME/app` and `$PATH` as written.\n\nExample markup: `<div>` and `![image](file.png)`.\n\n```sh\ncd "$HOME/app"\nexport PATH="$HOME/bin:$PATH"\n```\n';
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  await source.fill(guide);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Installation guide' })).toBeVisible();
+  await expect(page.locator('.document-editor > p code').first()).toHaveText('$HOME');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(source).toHaveValue(guide);
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
 test('PDF export includes unsaved Markdown and Mermaid without changing the document or view', async () => {
   const target = path.join(directory, 'export.pdf');
   await application.evaluate(({ dialog }, filePath) => {
@@ -1338,6 +1351,19 @@ test('renaming a Markdown file to a code extension keeps its unsaved source edit
   await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue('const value = "Keep this";\n');
   await expect(page.locator('.syntax-highlight .hljs-keyword')).toHaveText('const');
   await expect(page.getByRole('tab', { name: 'sample.ts, unsaved changes', exact: true })).toBeVisible();
+  await application.evaluate((_, target) => {
+    if (process.platform !== 'win32') return;
+    const fs = process.getBuiltinModule('fs/promises');
+    const rename = fs.rename;
+    let locked = true;
+    fs.rename = async (...args) => {
+      if (locked && args[1] === target) {
+        locked = false;
+        throw Object.assign(new Error('Temporary Windows file lock'), { code: 'EPERM' });
+      }
+      return rename(...args);
+    };
+  }, path.join(directory, 'sample.ts'));
   await saveWithShortcut(path.join(directory, 'sample.ts'), 'const value = "Keep this";\n');
 });
 
