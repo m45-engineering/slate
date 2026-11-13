@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.3 - Unreleased
+## 0.1.3 - 2026-11-13
 
 - Use rounded, shadow-free Mermaid diagrams with a neutral palette, lighter connectors, and pill-shaped edge labels in the editor and PDF exports.
 - Preserve Mermaid arrowheads in PDF exports by giving the printed copy its own marker IDs.

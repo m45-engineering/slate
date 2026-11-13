@@ -2,6 +2,7 @@ name: Build Slate
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -17,16 +18,41 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+      - name: Fingerprint files that affect validation and installers
+        id: source
+        shell: bash
+        run: |
+          fingerprint=$(git ls-files --stage -z -- . ':!README.md' ':!CHANGELOG.md' | git hash-object --stdin)
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+      # Reuse only a completed successful run for the exact same source tree and platform.
+      # Include the workflow and Markdown fixtures; only the two release documents are excluded.
+      - uses: actions/cache/restore@v5
+        id: validated
+        with:
+          path: ${{ runner.temp }}/slate-validation
+          key: slate-validated-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.source.outputs.fingerprint }}
+          lookup-only: true
+      - name: Reuse successful validation
+        if: steps.validated.outputs.cache-hit == 'true' && github.event_name != 'workflow_dispatch'
+        shell: bash
+        run: echo 'Unchanged application, tests, and build configuration already passed on this platform. Skipping tests and packaging. Run this workflow manually to build fresh installers.' >> "$GITHUB_STEP_SUMMARY"
       - uses: pnpm/action-setup@v5
+        if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
       - uses: actions/setup-node@v6
+        if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
       - run: pnpm check
+        if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
       - run: pnpm icons
+        if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
       - run: pnpm build
+        if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
       - run: pnpm test:e2e
+        if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
       - name: Upload test failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v6
@@ -35,10 +61,12 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
       - name: Package installers
+        if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
         run: pnpm exec electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v6
+        if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
         with:
           name: slate-${{ matrix.os }}
           path: |
@@ -46,3 +74,14 @@ jobs:
             release/*.zip
             release/*.exe
           if-no-files-found: error
+      - name: Record successful validation
+        if: steps.validated.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/slate-validation"
+          printf 'passed\n' > "$RUNNER_TEMP/slate-validation/passed"
+      - uses: actions/cache/save@v5
+        if: steps.validated.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/slate-validation
+          key: ${{ steps.validated.outputs.cache-primary-key }}
