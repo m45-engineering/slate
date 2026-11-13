@@ -146,6 +146,55 @@ test('runs as an isolated desktop app with a live Mermaid preview', async () => 
   await page.screenshot({ path: 'tmp/slate-desktop.png' });
 });
 
+test('Mermaid supports pointer-centered zoom, dragging, and fit without editing the document', async () => {
+  const viewport = page.getByRole('group', { name: 'Diagram canvas', exact: true });
+  const canvas = viewport.locator('.diagram-canvas');
+  const zoom = page.getByLabel('Diagram zoom', { exact: true });
+  await expect(zoom).toHaveText('100%');
+  await viewport.scrollIntoViewIfNeeded();
+  const initial = await canvas.evaluate(element => {
+    const matrix = new DOMMatrix(getComputedStyle(element).transform);
+    return { scale: matrix.a, x: matrix.e, y: matrix.f };
+  });
+  const scrollTop = () => page.locator('.document-scroll').evaluate(element => element.scrollTop);
+  const scrollBefore = await scrollTop();
+  const bounds = (await viewport.boundingBox())!;
+  const pointer = { x: bounds.x + bounds.width * 0.6, y: bounds.y + bounds.height * 0.5 };
+  await page.mouse.move(pointer.x, pointer.y);
+  await page.mouse.wheel(0, -300);
+  await expect(zoom).not.toHaveText('100%');
+  const enlarged = await canvas.evaluate(element => {
+    const matrix = new DOMMatrix(getComputedStyle(element).transform);
+    return { scale: matrix.a, x: matrix.e, y: matrix.f };
+  });
+  expect(enlarged.scale).toBeGreaterThan(initial.scale);
+  expect(await scrollTop()).toBe(scrollBefore);
+  // The same diagram point stays under the mouse as its scale changes.
+  const localX = pointer.x - bounds.x;
+  expect((localX - enlarged.x) / enlarged.scale).toBeCloseTo((localX - initial.x) / initial.scale, 0);
+  await page.mouse.down();
+  await page.mouse.move(pointer.x + 90, pointer.y + 40, { steps: 5 });
+  await page.mouse.up();
+  const moved = await canvas.evaluate(element => {
+    const matrix = new DOMMatrix(getComputedStyle(element).transform);
+    return { x: matrix.e, y: matrix.f };
+  });
+  expect(moved.x - enlarged.x).toBeCloseTo(90, 1);
+  expect(moved.y - enlarged.y).toBeCloseTo(40, 1);
+  await expect(viewport).not.toHaveClass(/is-panning/);
+  await page.getByRole('button', { name: 'Fit diagram', exact: true }).click();
+  await expect(zoom).toHaveText('100%');
+  await viewport.focus();
+  await page.keyboard.press('+');
+  await expect(zoom).toHaveText('125%');
+  await page.keyboard.press('0');
+  await expect(zoom).toHaveText('100%');
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(original);
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
 test('footer contains company and repository links without document statistics', async () => {
   const footer = page.locator('footer');
   await expect(footer).toContainText('© 2026 by M45 Engineering Inc.');
@@ -351,6 +400,58 @@ test('PDF export fits wide and tall diagrams and paginates long tables', async (
   const pdf = await readFile(target);
   expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
   await writeFile('tmp/slate-pdf-diagrams.pdf', pdf);
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('PDF preserves Mermaid labels and layout on a larger page regardless of canvas zoom', async () => {
+  const target = path.join(directory, 'large-diagram.pdf');
+  const diagram = 'flowchart TD\n  TITLE[ASSURANCE SPACE]:::title --> N0[Initial evidence]\n'
+    + Array.from({ length: 18 }, (_, i) => `  N${i} --> N${i + 1}[Evidence step ${i + 1}]`).join('\n')
+    + '\n  classDef title font-size:24px,font-weight:700,white-space:nowrap';
+  const markdown = `# Report\n\n## Large diagram\n\n\`\`\`mermaid\n${diagram}\n\`\`\`\n\n## Discussion\n\nOrdinary prose stays on A4.\n`;
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill(markdown);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(page.locator('.mermaid-block')).toHaveAttribute('data-mermaid-status', 'ready');
+  const layout = await page.locator('.diagram-canvas svg').evaluate(svg => ({
+    viewBox: svg.getAttribute('viewBox'),
+    nodes: [...svg.querySelectorAll('g.node')].map(node => ({ text: node.textContent, transform: node.getAttribute('transform') })),
+  }));
+  await page.getByRole('button', { name: 'Zoom in diagram', exact: true }).click();
+  await application.evaluate(({ app, dialog }, filePath) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+    app.once('web-contents-created', (_, contents) => {
+      const print = contents.printToPDF.bind(contents);
+      contents.printToPDF = async options => {
+        Reflect.set(globalThis, 'printedDiagram', await contents.executeJavaScript(`(() => {
+          const svg = document.querySelector('.pdf-output .diagram-preview svg');
+          const figure = svg.closest('.pdf-figure');
+          return {
+            viewBox: svg.getAttribute('viewBox'),
+            nodes: [...svg.querySelectorAll('g.node')].map(node => ({ text: node.textContent, transform: node.getAttribute('transform') })),
+            page: figure.style.page,
+            headings: [...figure.querySelectorAll('h1, h2')].map(heading => heading.textContent),
+            controls: document.querySelectorAll('.pdf-output .diagram-viewer').length
+          };
+        })()`));
+        return print(options);
+      };
+    });
+  }, target);
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: `PDF saved to ${target}` })).toBeVisible({ timeout: 30_000 });
+  const printed = await application.evaluate(() => Reflect.get(globalThis, 'printedDiagram'));
+  expect(printed).toEqual({ ...layout, page: 'diagram-large-0', headings: ['Report', 'Large diagram'], controls: 0 });
+  // The actual PDF has one tall diagram page followed by ordinary A4 prose.
+  const pdf = (await readFile(target)).toString('latin1');
+  const sizes = [...pdf.matchAll(/\/MediaBox\s*\[0 0 ([\d.]+) ([\d.]+)\]/g)].map(match => [Number(match[1]), Number(match[2])]);
+  expect(sizes).toHaveLength(2);
+  expect(sizes[0][1]).toBeGreaterThan(842);
+  expect(sizes[1][0]).toBeCloseTo(595, 0);
+  expect(sizes[1][1]).toBeCloseTo(842, 0);
+  await expect(page.getByLabel('Diagram zoom', { exact: true })).toHaveText('125%');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(markdown);
   expect(await readFile(file, 'utf8')).toBe(original);
 });
 

@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import CodeBlock from '@tiptap/extension-code-block';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { Input } from './ui/input';
+import { DiagramViewer } from './diagram-viewer';
 
 const diagramTheme = { theme: 'base', look: 'classic' } as const;
 
@@ -25,7 +26,7 @@ function CodeBlockView({ node, updateAttributes, editor }: NodeViewProps) {
         mermaid.initialize({
           startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true,
           ...diagramTheme, fontFamily: getComputedStyle(editor.view.dom).fontFamily,
-          htmlLabels: editor.isEditable,
+          htmlLabels: true,
           // These diagram types have theme defaults independent of Mermaid's global theme.
           flowchart: { ...diagramTheme, curve: 'rounded', diagramPadding: 16, padding: 24, nodeSpacing: 40, rankSpacing: 48 },
           agentflow: diagramTheme, swimlane: diagramTheme, sequence: diagramTheme,
@@ -79,7 +80,7 @@ function CodeBlockView({ node, updateAttributes, editor }: NodeViewProps) {
     </div>
     <pre className={isMermaid ? 'code-hidden' : ''}><NodeViewContent<'code'> as="code" spellCheck={false} /></pre>
     {isMermaid && <div className="diagram-preview" contentEditable={false}>
-      {svg ? <div role="img" aria-label="Mermaid diagram" dangerouslySetInnerHTML={{ __html: svg }} /> : !error && <p className="diagram-loading">Drawing your diagram…</p>}
+      {svg ? editor.isEditable ? <DiagramViewer svg={svg} /> : <div role="img" aria-label="Mermaid diagram" dangerouslySetInnerHTML={{ __html: svg }} /> : !error && <p className="diagram-loading">Drawing your diagram…</p>}
       {error && <p className="diagram-error" role="status">{error} Edit the source in Markdown view to update the preview.</p>}
     </div>}
   </NodeViewWrapper>;
