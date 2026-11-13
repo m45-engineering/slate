@@ -10,7 +10,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-0.1.2-mac-arm64.dmg` from the [v0.1.2 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.2). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-0.1.3-mac-arm64.dmg` from the [v0.1.3 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.3). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -20,13 +20,13 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-0.1.2-win-x64.exe` from the [v0.1.2 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.2) for a standard Intel/AMD PC.
+1. Download `Slate-0.1.3-win-x64.exe` from the [v0.1.3 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.3) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Both installers are available in the v0.1.2 release. They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
+Both installers are available in the v0.1.3 release. They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
 
 ## Features
 
@@ -129,7 +129,7 @@ pnpm package:win   # run on Windows: NSIS installer for the current architecture
 
 First run `pnpm install --frozen-lockfile`. Each packaging command regenerates the icons, builds the UI, and bundles Electron with the runtime assets. Outputs are generated in `release/` and are not tracked. Build on the target operating system with a matching Node.js architecture. This first version has no cross-compilation setup.
 
-[The build workflow](.github/workflows/build.yml) runs tests and builds both platforms on their native runners after a push or pull request. Maintainers can also use **Actions → Build Slate → Run workflow**. It uploads installers as build artifacts; it does not publish releases.
+[The build workflow](.github/workflows/build.yml) runs for pull requests and pushes to `main`, avoiding duplicate runs for PR branches. Each platform reuses a previous successful validation when every tracked file except `README.md` and `CHANGELOG.md` is unchanged. These documentation-only updates keep the existing checks successful without reinstalling dependencies, rerunning tests, or rebuilding installers. A missing or expired validation cache causes a full run. Maintainers can force fresh tests and installers with **Actions → Build Slate → Run workflow**. Full runs upload installers as build artifacts; they do not publish releases.
 
 **Release status:** macOS packaging uses `identity: "-"`, `hardenedRuntime: false`, and `notarize: false` for a locally signed build without selecting a Keychain certificate. Build on the target architecture with its matching Electron installation. To avoid unverified-developer warnings, macOS builds need a Developer ID signature and notarization, and Windows builds need a trusted signing certificate. There is no automatic updater.
 
