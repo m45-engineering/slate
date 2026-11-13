@@ -63,7 +63,7 @@ function Directory({ relativePath, depth, currentPath, refreshKey, revealPath, o
   const [listing, setListing] = useState<FolderListing | null>(null);
   useEffect(() => {
     let canceled = false;
-    setListing(null);
+    // Keep rows mounted during refresh so scrolling and expanded folders stay intact.
     void window.slate?.listFolder(relativePath).then(result => { if (!canceled) setListing(result); }).catch(error => {
       if (!canceled) setListing({ error: String(error) });
     });
@@ -152,6 +152,18 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
     } catch (error) { onError(error instanceof Error ? error.message : 'The item could not be moved.'); }
   }
 
+  async function importFiles(files: File[], destination: string) {
+    try {
+      const result = await window.slate?.importFiles(files, destination);
+      if (result?.error) onError(result.error);
+      if (result?.changed) {
+        setQuery('');
+        setRevealPath([destination, files[0].name].filter(Boolean).join('/'));
+      }
+    } catch (error) { onError(error instanceof Error ? error.message : 'The files could not be copied.'); }
+    finally { setRefreshKey(value => value + 1); }
+  }
+
   function canDrop(destination: string) {
     const source = dragSourceRef.current;
     if (!source || source.kind === 'link') return false;
@@ -177,9 +189,10 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
     end: endDrag,
     over(destination, event) {
       event.stopPropagation();
-      if (canDrop(destination)) {
+      const externalFiles = !dragSourceRef.current && event.dataTransfer.types.includes('Files');
+      if (externalFiles || canDrop(destination)) {
         event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
+        event.dataTransfer.dropEffect = externalFiles ? 'copy' : 'move';
         setDropTarget(destination);
       } else {
         event.dataTransfer.dropEffect = 'none';
@@ -194,8 +207,10 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
       event.preventDefault(); event.stopPropagation();
       const source = dragSourceRef.current;
       const allowed = canDrop(destination);
+      const files = Array.from(event.dataTransfer.files);
       endDrag();
       if (source && allowed) void move(source, destination);
+      else if (!source && files.length) void importFiles(files, destination);
     },
   };
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.3 - Unreleased
+
+- Use rounded, shadow-free Mermaid diagrams with a neutral palette, lighter connectors, and pill-shaped edge labels in the editor and PDF exports.
+- Preserve Mermaid arrowheads in PDF exports by giving the printed copy its own marker IDs.
+- Copy files from Finder or another file manager into sidebar folders or the workspace root. Preserve the originals and refuse existing destination names.
+- Keep the file tree's scroll position and expanded folders when refreshing after file drops.
+- Open Slate centered at 90% of the current display's available width and height.
+
 ## 0.1.2 - 2026-11-12
 
 - Add find and replace in Visual, Markdown, and source views, with highlighted matches, next/previous navigation, match-case, Replace All, and undo.

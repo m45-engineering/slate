@@ -55,6 +55,16 @@ export function PdfDocument() {
       finishing = true;
       // Paginate a static copy so print-only grouping never changes the editor's document.
       const printable = editor.view.dom.cloneNode(true) as HTMLElement;
+      // Hidden source SVGs remain mounted; duplicate marker IDs would hide the printed arrowheads.
+      for (const marker of printable.querySelectorAll<SVGMarkerElement>('marker[id]')) {
+        const originalId = marker.id;
+        marker.id = `pdf-${originalId}`;
+        for (const edge of printable.querySelectorAll('[marker-start], [marker-mid], [marker-end]')) {
+          for (const attribute of ['marker-start', 'marker-mid', 'marker-end']) {
+            if (edge.getAttribute(attribute) === `url(#${originalId})`) edge.setAttribute(attribute, `url(#${marker.id})`);
+          }
+        }
+      }
       for (const table of printable.querySelectorAll('table')) {
         const header = table.rows[0];
         if (header && [...header.cells].every(cell => cell.tagName === 'TH')) table.createTHead().append(header);

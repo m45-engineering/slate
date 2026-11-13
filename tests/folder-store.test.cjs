@@ -195,3 +195,51 @@ test('creation rejects traversal, invalid names, unsupported files, and non-fold
   await assert.rejects(store.create('', 'image.png', 'file'), /supported.*extension/);
   await assert.rejects(store.create('', 'name', 'link'), /file or folder/);
 });
+
+test('imports multiple files byte-for-byte while keeping originals and refreshing search', async t => {
+  const { root, store } = await fixture(t);
+  const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'slate-import-'));
+  t.after(() => fs.rm(outside, { recursive: true, force: true }));
+  const text = path.join(outside, 'imported.md');
+  const binary = path.join(outside, 'image.png');
+  const bytes = Buffer.from([0, 1, 255, 10, 128]);
+  await fs.writeFile(text, '\ufeff# Imported\r\n');
+  await fs.writeFile(binary, bytes);
+  assert.equal((await store.search('imported')).total, 0);
+  await store.importFiles([text, binary], 'docs');
+  assert.deepEqual(await fs.readFile(path.join(root, 'docs/imported.md')), await fs.readFile(text));
+  assert.deepEqual(await fs.readFile(path.join(root, 'docs/image.png')), bytes);
+  assert.deepEqual(await fs.readFile(binary), bytes);
+  assert.equal((await store.search('imported')).total, 1);
+});
+
+test('import rejects collisions and duplicate names before copying any files', async t => {
+  const { root, store } = await fixture(t);
+  await fs.mkdir(path.join(root, 'incoming'));
+  const fresh = path.join(root, 'incoming/fresh.md');
+  const duplicate = path.join(root, 'incoming/README.md');
+  await fs.writeFile(fresh, '# Fresh');
+  await fs.writeFile(duplicate, '# Duplicate');
+  await assert.rejects(store.importFiles([fresh, duplicate], ''), /already exists/);
+  await assert.rejects(fs.access(path.join(root, 'fresh.md')));
+  assert.equal(await fs.readFile(path.join(root, 'README.md'), 'utf8'), '# Read me');
+  await assert.rejects(store.importFiles([fresh, fresh], 'docs'), /More than one/);
+  await assert.rejects(fs.access(path.join(root, 'docs/fresh.md')));
+});
+
+test('import requires disk files and confines the destination to the workspace', async t => {
+  const { root, store } = await fixture(t);
+  const source = path.join(root, 'README.md');
+  await assert.rejects(store.importFiles([source], '..'), /outside/);
+  await assert.rejects(store.importFiles([source], 'README.md'), /destination folder/);
+  await assert.rejects(store.importFiles([path.join(root, 'docs')], ''), /regular files/);
+  await assert.rejects(store.importFiles([''], ''), /Drop files/);
+  await assert.rejects(store.importFiles([], ''), /Drop files/);
+  if (process.platform !== 'win32') {
+    const linked = path.join(root, 'linked.md');
+    await fs.symlink(source, linked);
+    await assert.rejects(store.importFiles([linked], 'docs'), /symbolic links/);
+    await fs.symlink(path.dirname(root), path.join(root, 'outside'));
+    await assert.rejects(store.importFiles([source], 'outside'), /outside/);
+  }
+});
