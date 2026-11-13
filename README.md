@@ -2,6 +2,8 @@
 
 A quiet place to write. A local Markdown, text, and code editor for macOS and Windows, built with Electron, Next.js, and Tiptap.
 
+![Slate showing a fictional rover project with document tabs, a folder sidebar, a formula, a Mermaid diagram, a checklist, and a table.](docs/images/slate.png)
+
 Your document is a `.md` file. Slate adds a familiar editing surface; it does not add a database, an account, or a proprietary document format.
 
 ## Install Slate
@@ -129,7 +131,9 @@ pnpm package:win   # run on Windows: NSIS installer for the current architecture
 
 First run `pnpm install --frozen-lockfile`. Each packaging command regenerates the icons, builds the UI, and bundles Electron with the runtime assets. Outputs are generated in `release/` and are not tracked. Build on the target operating system with a matching Node.js architecture. This first version has no cross-compilation setup.
 
-[The build workflow](.github/workflows/build.yml) runs for pull requests and pushes to `main`, avoiding duplicate runs for PR branches. Each platform reuses a previous successful validation when every tracked file except `README.md` and `CHANGELOG.md` is unchanged. These documentation-only updates keep the existing checks successful without reinstalling dependencies, rerunning tests, or rebuilding installers. A missing or expired validation cache causes a full run. Maintainers can force fresh tests and installers with **Actions → Build Slate → Run workflow**. Full runs upload installers as build artifacts; they do not publish releases.
+[The build workflow](.github/workflows/build.yml) runs for pull requests and pushes to `main`, avoiding duplicate runs for PR branches. A lightweight change check skips the desktop jobs when only `README.md`, `CHANGELOG.md`, or files under `docs/` changed, including README images. Documentation-only changes do not install dependencies, run tests, or build installers, even when the validation cache is missing or expired. Application, test, and workflow changes use the existing per-platform validation cache and run the full checks and build when needed. An unavailable comparison commit also takes the build path. Maintainers can force fresh tests and installers with **Actions → Build Slate → Run workflow**. Full runs upload installers as build artifacts; they do not publish releases.
+
+The initial update introducing documentation-only skipping also skips the desktop jobs when upgrading from the exact previous workflow version and no other application, test, or configuration files changed. Later workflow edits follow the normal build path.
 
 **Release status:** macOS packaging uses `identity: "-"`, `hardenedRuntime: false`, and `notarize: false` for a locally signed build without selecting a Keychain certificate. Build on the target architecture with its matching Electron installation. To avoid unverified-developer warnings, macOS builds need a Developer ID signature and notarization, and Windows builds need a trusted signing certificate. There is no automatic updater.
 
