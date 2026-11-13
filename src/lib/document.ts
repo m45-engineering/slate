@@ -35,6 +35,7 @@ export interface DesktopBridge {
   createEntry(parent: string, name: string, kind: 'file' | 'directory'): Promise<{ changed?: boolean; path?: string; error?: string; canceled?: boolean }>;
   renameEntry(path: string, name: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
   moveEntry(path: string, destination?: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
+  importFiles(files: File[], destination: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
   trashEntry(path: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
   onFolder(callback: (folder: LocalFolder) => void): () => void;
 }

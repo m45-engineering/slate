@@ -1,4 +1,4 @@
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { test, expect, _electron as electron, type ElectronApplication, type Page, type Locator } from '@playwright/test';
 import { mkdir, mkdtemp, realpath, writeFile, readFile, rm, unlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -76,6 +76,19 @@ async function openSidebarFile(name: string) {
   const tab = page.getByRole('tablist', { name: 'Open documents' }).getByRole('tab')
     .filter({ has: page.getByText(name, { exact: true }) });
   await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+async function dropNativeFiles(target: Locator, files: string[]) {
+  const bounds = (await target.boundingBox())!;
+  const session = await page.context().newCDPSession(page);
+  const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  const data = { items: [], files, dragOperationsMask: 1 };
+  try {
+    await session.send('Input.dispatchDragEvent', { type: 'dragEnter', ...point, data });
+    await session.send('Input.dispatchDragEvent', { type: 'dragOver', ...point, data });
+    await expect(target).toHaveAttribute('data-drop-target', 'true');
+    await session.send('Input.dispatchDragEvent', { type: 'drop', ...point, data });
+  } finally { await session.detach(); }
 }
 
 async function expectActiveFileInFolder(name: string, folder: string) {
@@ -264,8 +277,21 @@ test('formulas can be inserted and invalid LaTeX stops PDF export', async () => 
 
 test('PDF export includes unsaved Markdown and Mermaid without changing the document or view', async () => {
   const target = path.join(directory, 'export.pdf');
-  await application.evaluate(({ dialog }, filePath) => {
+  await application.evaluate(({ app, dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+    app.once('web-contents-created', (_, contents) => {
+      const print = contents.printToPDF.bind(contents);
+      contents.printToPDF = async options => {
+        Reflect.set(globalThis, 'printedMarkerTargets', await contents.executeJavaScript(`
+          [...document.querySelectorAll('.pdf-output [marker-end]')].map(edge => {
+            const id = edge.getAttribute('marker-end').slice(5, -1);
+            const targets = [...document.querySelectorAll('[id]')].filter(element => element.id === id);
+            return targets.length === 1 && Boolean(targets[0].closest('.pdf-output'));
+          })
+        `));
+        return print(options);
+      };
+    });
   }, target);
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   const source = page.getByRole('textbox', { name: 'Markdown source' });
@@ -277,6 +303,7 @@ test('PDF export includes unsaved Markdown and Mermaid without changing the docu
   expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
   expect(pdf.toString('latin1')).toContain('https://example.com/pdf-reference');
   expect([...pdf.toString('latin1').matchAll(/\/Type \/Page\b/g)].length).toBeGreaterThan(1);
+  expect(await application.evaluate(() => Reflect.get(globalThis, 'printedMarkerTargets'))).toEqual([true]);
   await writeFile('tmp/slate-pdf-export.pdf', pdf);
   await expect(source).toHaveValue(markdown);
   await expect(page.getByRole('tab', { name: 'Markdown', exact: true })).toHaveAttribute('aria-selected', 'true');
@@ -1506,6 +1533,70 @@ test('dragging a file into a folder and back to the root preserves its open draf
   await expect.poll(() => readFile(file, 'utf8').catch(() => null)).toBe('# Dragged draft\n');
   await expect(readFile(path.join(archive, 'sample.md'), 'utf8')).rejects.toThrow();
   await expect(page.getByRole('button', { name: 'sample.md', exact: true })).toHaveAttribute('aria-current', 'page');
+});
+
+test('native file drops copy multiple files into a folder and root without changing open drafts', async () => {
+  const incoming = path.join(directory, 'incoming');
+  const archive = path.join(directory, 'archive');
+  await mkdir(incoming); await mkdir(archive);
+  const text = path.join(incoming, 'imported.md');
+  const binary = path.join(incoming, 'attachment.pdf');
+  const rootFile = path.join(incoming, 'root-copy.txt');
+  await writeFile(text, '# Imported\r\n');
+  await writeFile(binary, Buffer.from([0, 1, 255, 42]));
+  await writeFile(rootFile, 'Copy to root');
+  await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Keep my draft\n');
+  await dropNativeFiles(page.getByRole('button', { name: 'archive', exact: true }), [text, binary]);
+  await expect.poll(() => readFile(path.join(archive, 'imported.md'), 'utf8').catch(() => null)).toBe('# Imported\r\n');
+  expect(await readFile(path.join(archive, 'attachment.pdf'))).toEqual(await readFile(binary));
+  expect(await readFile(text, 'utf8')).toBe('# Imported\r\n');
+  await expect(page.getByRole('button', { name: 'imported.md', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'attachment.pdf', exact: true })).toBeDisabled();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Keep my draft\n');
+  await dropNativeFiles(page.getByLabel('Workspace folder', { exact: true }), [rootFile]);
+  await expect.poll(() => readFile(path.join(directory, 'root-copy.txt'), 'utf8').catch(() => null)).toBe('Copy to root');
+  expect(await readFile(rootFile, 'utf8')).toBe('Copy to root');
+  await expect(page.getByRole('button', { name: 'root-copy.txt', exact: true })).toBeVisible();
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('native file drops refuse existing destination names without replacing either file', async () => {
+  const incoming = path.join(directory, 'incoming');
+  await mkdir(incoming);
+  const source = path.join(incoming, 'sample.md');
+  await writeFile(source, '# Incoming copy\n');
+  await dropNativeFiles(page.getByLabel('Workspace folder', { exact: true }), [source]);
+  await expect(page.getByRole('status').filter({ hasText: 'sample.md already exists' })).toBeVisible();
+  expect(await readFile(source, 'utf8')).toBe('# Incoming copy\n');
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('native file drops preserve the scrolled destination and other expanded folders', async () => {
+  const incoming = path.join(directory, 'incoming.md');
+  await writeFile(incoming, '# Incoming\n');
+  await Promise.all(Array.from({ length: 60 }, (_, index) => mkdir(path.join(directory, `folder-${String(index).padStart(2, '0')}`))));
+  await mkdir(path.join(directory, 'a-expanded'));
+  await writeFile(path.join(directory, 'a-expanded', 'keep-expanded.md'), '# Keep expanded\n');
+  await mkdir(path.join(directory, 'z-destination', 'nested'), { recursive: true });
+  await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
+  await page.getByRole('button', { name: 'a-expanded', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'keep-expanded.md', exact: true })).toBeVisible();
+  const destination = page.getByRole('button', { name: 'z-destination', exact: true });
+  await destination.scrollIntoViewIfNeeded();
+  await destination.click();
+  const nested = page.getByRole('button', { name: 'nested', exact: true });
+  await nested.click();
+  await nested.scrollIntoViewIfNeeded();
+  const sidebar = page.locator('.folder-sidebar-content');
+  const previousScroll = await sidebar.evaluate(element => element.scrollTop);
+  expect(previousScroll).toBeGreaterThan(500);
+  await dropNativeFiles(nested, [incoming]);
+  await expect(page.getByRole('button', { name: 'incoming.md', exact: true })).toHaveCount(2);
+  await expect(nested).toBeInViewport();
+  expect(await sidebar.evaluate(element => element.scrollTop)).toBeGreaterThan(previousScroll - 40);
+  await expect(page.getByRole('button', { name: 'keep-expanded.md', exact: true })).toHaveCount(1);
 });
 
 test('dragging a folder moves all children and keeps both open tabs associated with their files', async () => {

@@ -1,4 +1,5 @@
 const fs = require('node:fs/promises');
+const { constants } = require('node:fs');
 const path = require('node:path');
 const { isTextFile } = require('./file-types.cjs');
 
@@ -75,6 +76,33 @@ class FolderStore {
     const parent = await this.resolve(destinationFolder);
     if (!(await fs.stat(parent)).isDirectory()) throw new Error('Choose a destination folder.');
     return this.relocate(relativePath, path.join(parent, path.basename(from)));
+  }
+
+  async importFiles(sources, destinationFolder) {
+    if (!Array.isArray(sources) || !sources.length || sources.some(source => typeof source !== 'string' || !path.isAbsolute(source))) {
+      throw new Error('Drop files from Finder or another file manager.');
+    }
+    const parent = await this.resolve(destinationFolder);
+    if (!(await fs.stat(parent)).isDirectory()) throw new Error('Choose a destination folder.');
+    const destinations = new Set();
+    const files = [];
+    // Check the whole selection before copying so known conflicts do not import a partial batch.
+    for (const source of sources) {
+      if (!(await fs.lstat(source)).isFile()) throw new Error('Drop regular files. Folders and symbolic links cannot be imported.');
+      const name = path.basename(source);
+      validateName(name);
+      const destination = path.join(parent, name);
+      if (destinations.has(destination)) throw new Error(`More than one dropped file is named ${name}. Nothing was copied.`);
+      try {
+        await fs.lstat(destination);
+        throw new Error(`${name} already exists in this folder. Nothing was replaced.`);
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      destinations.add(destination);
+      files.push({ source, destination });
+    }
+    try {
+      for (const file of files) await fs.copyFile(file.source, file.destination, constants.COPYFILE_EXCL);
+    } finally { this.invalidateSearchIndex(); }
   }
 
   async trash(relativePath, trashItem) {

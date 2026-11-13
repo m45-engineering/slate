@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, MenuItem, dialog, ipcMain, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, Menu, MenuItem, dialog, ipcMain, protocol, net, shell, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
@@ -332,6 +332,10 @@ handle('folder:move', (relativePath, destinationPath) => exclusive(async () => {
   const destination = path.relative(folder.root, await fs.promises.realpath(result.filePaths[0]));
   return changeEntry(relativePath, () => folder.move(relativePath, destination));
 }));
+handle('folder:import', (sources, destinationPath) => exclusive(async () => {
+  await folder.importFiles(sources, destinationPath);
+  return { changed: true };
+}));
 handle('folder:trash', relativePath => exclusive(() => changeEntry(relativePath, () => folder.trash(relativePath, absolute => shell.trashItem(absolute)), true)));
 
 async function newDocument(draft) {
@@ -472,8 +476,13 @@ function createMenu() {
 }
 
 function createWindow() {
+  const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const width = Math.min(workArea.width, Math.max(700, Math.round(workArea.width * 0.9)));
+  const height = Math.min(workArea.height, Math.max(500, Math.round(workArea.height * 0.9)));
   window = new BrowserWindow({
-    width: 1120, height: 820, minWidth: 700, minHeight: 500,
+    width, height, minWidth: Math.min(700, workArea.width), minHeight: Math.min(500, workArea.height),
+    x: workArea.x + Math.round((workArea.width - width) / 2),
+    y: workArea.y + Math.round((workArea.height - height) / 2),
     title: 'Slate', icon: appIcon, backgroundColor: '#ffffff', show: false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 20, y: 23 },

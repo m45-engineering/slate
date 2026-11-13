@@ -36,13 +36,15 @@ Both installers are available in the v0.1.2 release. They contain the code from 
 - Source editing with line numbers, Geist Mono, document zoom, and the same explicit Save and conflict protection. Supports TypeScript/JavaScript, Python, C/C++, SQL, JSON/JSONL, YAML, XML/XMI/ReqIF, HTML/SVG source, CSS, CSV, shell scripts, patches, plain text, and common extensionless files such as Dockerfile and Makefile.
 - Create files and folders directly from the sidebar: use the icons beside the workspace name for the root, or right-click a folder for New File / New Folder. New files open in a tab; existing files are never replaced.
 - Drag files or folders onto another folder in the sidebar to move them. Hovering expands a folder; drop onto the workspace heading to move back to the root. Open tabs keep their drafts and follow the move. Moves refuse existing destination names.
+- Drop files from Finder or another file manager onto a sidebar folder or the workspace heading to copy them there. The originals stay in place; existing destination files are never replaced.
 - Right-click files or folders in the sidebar (including search results) to rename, move, or delete them. Move uses the native folder picker within the open workspace; Delete confirms before sending the item to the system Trash. Open tabs follow renamed or moved files, including unsaved edits.
 - Multiple document tabs with a blue dot for unsaved changes, individual close buttons, drag reordering, and a right-click menu for Close / Close Others / Close All. Switching tabs keeps each draft in memory.
 - Reopens the last folder and saved-file tabs in their previous order on restart, reading each file's latest contents from disk.
+- Opens centered at 90% of the current display's available width and height, leaving the menu bar and Dock or taskbar clear.
 - A single compact toolbar, high-contrast monochrome controls, and a blank document at startup.
 - A wider visual document area and document zoom from 75% to 200%, without scaling the application controls.
 - Headings, bold, italic, strikethrough, links, lists, checkboxes, and quotes.
-- Editable Markdown tables and fenced code blocks. Mermaid diagrams are preview-only in Visual mode; add or edit their fenced source in Markdown view.
+- Editable Markdown tables and fenced code blocks. Mermaid diagrams use a rounded, shadow-free neutral style and are preview-only in Visual mode; add or edit their fenced source in Markdown view.
 - Inline and display LaTeX formulas, rendered locally with KaTeX and preserved in Markdown and PDF exports.
 - Local PDF export for Markdown, including Mermaid diagrams, tables, task lists, clickable web links, and page numbers.
 - Native Open, Save, Save As, keyboard shortcuts, and `.md` / `.markdown` file associations.

@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 function subscribe(channel, callback) {
   const listener = (_event, value) => callback(value);
@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('slate', {
   createEntry: (parent, name, kind) => ipcRenderer.invoke('folder:create', parent, name, kind),
   renameEntry: (path, name) => ipcRenderer.invoke('folder:rename', path, name),
   moveEntry: (path, destination) => ipcRenderer.invoke('folder:move', path, destination),
+  importFiles: (files, destination) => ipcRenderer.invoke('folder:import', files.map(file => webUtils.getPathForFile(file)), destination),
   trashEntry: (path) => ipcRenderer.invoke('folder:trash', path),
   onFolder: (callback) => subscribe('folder:changed', callback),
 });
