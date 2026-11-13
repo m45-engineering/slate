@@ -10,7 +10,45 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.changes.outputs.build }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check for application changes
+        id: changes
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          build=true
+          reason='Documentation-only change'
+          # Manual runs and unavailable base commits always take the full build path.
+          if [[ "$GITHUB_EVENT_NAME" != 'workflow_dispatch' && -n "$BASE_SHA" ]] && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            if git diff --quiet "$BASE_SHA" HEAD -- . ':!README.md' ':!CHANGELOG.md' ':!docs/**'; then
+              build=false
+            else
+              status=$?
+              if [[ "$status" -ne 1 ]]; then exit "$status"; fi
+              # One-time transition from the exact workflow that predates docs-only skipping.
+              # Other application/configuration files must still be unchanged.
+              previous_workflow=$(git rev-parse "$BASE_SHA:.github/workflows/build.yml" 2>/dev/null || true)
+              if [[ "$previous_workflow" == '408858a9f52fef0cf9737ec6fc29e0107e87fa51' ]] && git diff --quiet "$BASE_SHA" HEAD -- . ':!README.md' ':!CHANGELOG.md' ':!docs/**' ':!.github/workflows/build.yml'; then
+                build=false
+                reason='Documentation and initial docs-only workflow update'
+              fi
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          if [[ "$build" == false ]]; then
+            echo "$reason. Skipping desktop validation and packaging regardless of cache availability." >> "$GITHUB_STEP_SUMMARY"
+          fi
   desktop:
+    needs: changes
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.build == 'true') }}
     strategy:
       fail-fast: false
       matrix:
@@ -22,10 +60,10 @@ jobs:
         id: source
         shell: bash
         run: |
-          fingerprint=$(git ls-files --stage -z -- . ':!README.md' ':!CHANGELOG.md' | git hash-object --stdin)
+          fingerprint=$(git ls-files --stage -z -- . ':!README.md' ':!CHANGELOG.md' ':!docs/**' | git hash-object --stdin)
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
       # Reuse only a completed successful run for the exact same source tree and platform.
-      # Include the workflow and Markdown fixtures; only the two release documents are excluded.
+      # Include the workflow and test fixtures; exclude release documents and docs/.
       - uses: actions/cache/restore@v5
         id: validated
         with:
