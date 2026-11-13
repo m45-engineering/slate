@@ -69,27 +69,59 @@ export function PdfDocument() {
         const header = table.rows[0];
         if (header && [...header.cells].every(cell => cell.tagName === 'TH')) table.createTHead().append(header);
       }
+      const oversized: { section: HTMLElement; name: string; width: number }[] = [];
+      const mmPerPixel = 25.4 / 96;
       for (const diagram of printable.querySelectorAll('.mermaid-block')) {
         let block = diagram;
         while (block.parentElement && block.parentElement !== printable) block = block.parentElement;
-        const heading = block.previousElementSibling;
+        const headings: Element[] = [];
+        let heading = block.previousElementSibling;
+        while (heading?.matches('h1, h2, h3, h4, h5, h6')) {
+          headings.unshift(heading);
+          heading = heading.previousElementSibling;
+        }
         const section = document.createElement('section');
         section.className = 'pdf-figure';
         block.before(section);
-        if (heading?.matches('h1, h2, h3, h4, h5, h6')) section.append(heading);
+        section.append(...headings);
         section.append(block);
-        const box = diagram.querySelector('svg')?.viewBox.baseVal;
-        // Wider-than-page diagrams get a landscape sheet only when it improves their scale.
-        if (box && box.width > 174 * 96 / 25.4) {
-          const portraitScale = Math.min(174 / box.width, 235 / box.height);
-          const landscapeScale = Math.min(261 / box.width, 160 / box.height);
-          if (landscapeScale > portraitScale * 1.15) {
+        const svg = diagram.querySelector('svg');
+        const box = svg?.viewBox.baseVal;
+        if (svg && box?.width && box.height) {
+          const width = box.width * mmPerPixel;
+          const height = box.height * mmPerPixel;
+          const portraitScale = Math.min(1, 174 / width, 235 / height);
+          const landscapeScale = Math.min(1, 261 / width, 160 / height);
+          let scale = portraitScale;
+          // Keep small diagrams on A4, but never shrink a large diagram into illegible text.
+          if (Math.max(portraitScale, landscapeScale) < 0.8) {
+            const name = `diagram-large-${oversized.length}`;
+            const pageWidth = Math.max(210, Math.ceil(width + 36));
+            section.style.page = name;
+            section.style.width = `${pageWidth - 36}mm`;
+            oversized.push({ section, name, width: pageWidth });
+            scale = 1;
+          } else if (landscapeScale > portraitScale * 1.15) {
             section.classList.add('pdf-landscape');
+            scale = landscapeScale;
           }
+          svg.style.width = `${width * scale}mm`;
+          svg.style.height = `${height * scale}mm`;
+          svg.style.maxWidth = 'none';
+          svg.style.maxHeight = 'none';
         }
       }
       output.current?.replaceChildren(printable);
       await document.fonts.ready;
+      if (oversized.length) {
+        const styles = document.createElement('style');
+        styles.textContent = oversized.map(({ section, name, width }) => {
+          // Measure the final heading, diagram, and margins at the page's actual content width.
+          const height = Math.max(297, Math.ceil(section.getBoundingClientRect().height * mmPerPixel + 37));
+          return `@page ${name} { size: ${width}mm ${height}mm; margin: 18mm; }`;
+        }).join('\n');
+        output.current?.append(styles);
+      }
       // Let React and the browser finish laying out the final SVGs before printing.
       requestAnimationFrame(() => requestAnimationFrame(() => {
         if (!canceled) { document.title = title; window.slatePdf?.ready(); }

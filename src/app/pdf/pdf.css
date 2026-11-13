@@ -17,14 +17,12 @@ html:has(.pdf-document), body:has(.pdf-document) { height: auto; overflow: visib
 .pdf-document .code-block { overflow: visible; border-radius: 0; }
 .pdf-document .code-block pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; font-size: 9pt; }
 .pdf-document .mermaid-block { break-inside: avoid; background: white; }
-.pdf-document .pdf-figure { break-inside: avoid; }
+.pdf-document .pdf-figure { display: flow-root; break-inside: avoid; }
 .pdf-document .pdf-figure > :is(h1, h2, h3, h4, h5, h6) { margin-top: 0; }
-.pdf-document .pdf-figure .diagram-preview svg { max-height: 210mm; }
 .pdf-document .pdf-landscape { page: diagram-landscape; }
 .pdf-document .pdf-landscape .mermaid-block { margin: 0; }
-.pdf-document .pdf-landscape .diagram-preview svg { max-height: 140mm; }
 .pdf-document .diagram-preview { padding: 8px 0; overflow: visible; }
-.pdf-document .diagram-preview svg { display: block; width: 100%; height: auto; max-height: 235mm; margin: auto; }
+.pdf-document .diagram-preview svg { display: block; margin: auto; }
 .pdf-document .task-checkbox { padding-top: 4px; }
 .pdf-document .task-checkbox button { opacity: 1; }
 .pdf-document .tiptap-mathematics-render[data-type='block-math'] { break-inside: avoid; overflow: visible; }

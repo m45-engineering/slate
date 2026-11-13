@@ -44,7 +44,7 @@ Both installers are available in the v0.1.3 release. They contain the code from 
 - A single compact toolbar, high-contrast monochrome controls, and a blank document at startup.
 - A wider visual document area and document zoom from 75% to 200%, without scaling the application controls.
 - Headings, bold, italic, strikethrough, links, lists, checkboxes, and quotes.
-- Editable Markdown tables and fenced code blocks. Mermaid diagrams use a rounded, shadow-free neutral style and are preview-only in Visual mode; add or edit their fenced source in Markdown view.
+- Editable Markdown tables and fenced code blocks. Mermaid diagrams use a rounded, shadow-free neutral style. Scroll over a diagram to zoom, drag to move it, and choose **Fit** to reset the view. Add or edit their fenced source in Markdown view.
 - Inline and display LaTeX formulas, rendered locally with KaTeX and preserved in Markdown and PDF exports.
 - Local PDF export for Markdown, including Mermaid diagrams, tables, task lists, clickable web links, and page numbers.
 - Native Open, Save, Save As, keyboard shortcuts, and `.md` / `.markdown` file associations.
@@ -157,7 +157,7 @@ Write inline LaTeX as `$E=mc^2$` and display LaTeX between `$$` delimiters on se
 
 Choose **Export PDF** in the toolbar or **File → Export PDF…**, then choose where to save it. Export uses the current document, including unsaved edits, without saving or changing the Markdown file. It works from either Visual or Markdown view.
 
-PDFs are rendered entirely on your computer using Slate's bundled Chromium and fonts. They include A4 pages, page numbers, selectable text, clickable web links, and rendered Mermaid diagrams. Wide diagrams receive a landscape page when that improves readability. Editor controls and source-editing fields are omitted. An invalid diagram stops export instead of silently producing a missing or outdated figure.
+PDFs are rendered entirely on your computer using Slate's bundled Chromium and fonts. They include A4 pages, page numbers, selectable text, clickable web links, and rendered Mermaid diagrams. Wide diagrams receive a landscape page when that improves readability; oversized diagrams get one larger page to keep their text readable. Diagram layout matches Visual view, independent of canvas zoom or position. Editor controls and source-editing fields are omitted. An invalid diagram stops export instead of silently producing a missing or outdated figure.
 
 Export supports the same Markdown content as Visual view. The source-only constructs listed above are rejected explicitly so they cannot silently disappear. Custom headers, a generated table of contents, and Word export are not included.
 
