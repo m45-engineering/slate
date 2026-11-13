@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.4 - 2026-11-13
 
 - Zoom Mermaid diagrams with the mouse wheel, drag to pan within the diagram canvas, and use Fit to restore the full view. Support zoom buttons and keyboard controls without changing the Markdown source.
 - Preserve Mermaid label wrapping and layout in PDF exports. Give oversized diagrams one larger page, keep their headings together, and leave ordinary text on A4 pages.
