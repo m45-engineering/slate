@@ -195,6 +195,90 @@ test('Mermaid supports pointer-centered zoom, dragging, and fit without editing 
   expect(await readFile(file, 'utf8')).toBe(original);
 });
 
+test('Mermaid expands into a resizable dialog and restores the inline view without editing', async () => {
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const diagram = 'flowchart LR\n' + Array.from({ length: 12 }, (_, i) => `N${i}[Stage ${i + 1}] --> N${i + 1}[Stage ${i + 2}]`).join('\n');
+  const markdown = `# Large diagram\n\n\`\`\`mermaid\n${diagram}\n\`\`\`\n`;
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill(markdown);
+  await saveWithShortcut(file, markdown);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  const inline = page.locator('.diagram-preview');
+  const viewport = inline.getByRole('group', { name: 'Diagram canvas', exact: true });
+  const expand = inline.getByRole('button', { name: 'Expand diagram', exact: true });
+  await expect(inline.getByLabel('Diagram zoom', { exact: true })).toHaveText('100%');
+  await inline.getByRole('button', { name: 'Zoom in diagram', exact: true }).click();
+  await viewport.focus();
+  await page.keyboard.press('ArrowLeft');
+  const transform = await inline.locator('.diagram-canvas').evaluate(element => element.style.transform);
+  const bounds = (await viewport.boundingBox())!;
+  const scrollBefore = await page.locator('.document-scroll').evaluate(element => element.scrollTop);
+  await expand.click();
+  const dialog = page.getByRole('dialog', { name: 'Mermaid diagram', exact: true });
+  const expandedViewport = dialog.getByRole('group', { name: 'Diagram canvas', exact: true });
+  const expectCompactHeader = async () => {
+    const title = (await dialog.getByRole('heading', { name: 'Mermaid diagram' }).boundingBox())!;
+    for (const name of ['Zoom out diagram', 'Zoom in diagram', 'Fit diagram', 'Close expanded diagram']) {
+      const button = (await dialog.getByRole('button', { name, exact: true }).boundingBox())!;
+      expect(Math.abs(button.y + button.height / 2 - title.y - title.height / 2)).toBeLessThan(1);
+    }
+    expect((await dialog.locator('.diagram-controls').boundingBox())!.height).toBeLessThanOrEqual(32);
+  };
+  await expect(dialog).toBeVisible();
+  await expectCompactHeader();
+  await expect(expandedViewport).toBeFocused();
+  if (process.platform === 'darwin') {
+    const titlebar = (await page.locator('.titlebar').boundingBox())!;
+    expect((await dialog.boundingBox())!.y).toBeGreaterThanOrEqual(titlebar.y + titlebar.height);
+  }
+  await expect(dialog.getByLabel('Diagram zoom', { exact: true })).toHaveText('100%');
+  const expandedBounds = (await expandedViewport.boundingBox())!;
+  expect(expandedBounds.width).toBeGreaterThan(bounds.width);
+  expect(expandedBounds.height).toBeGreaterThan(bounds.height);
+  await expect(dialog.locator('svg')).toContainText('Stage 13');
+  expect(await page.locator('svg[id]').evaluateAll(elements => {
+    const ids = elements.flatMap(svg => [svg.id, ...Array.from(svg.querySelectorAll('[id]'), element => element.id)]);
+    return new Set(ids).size === ids.length;
+  })).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(expand).toBeFocused();
+  expect(await inline.locator('.diagram-canvas').evaluate(element => element.style.transform)).toBe(transform);
+  expect(await page.locator('.document-scroll').evaluate(element => element.scrollTop)).toBe(scrollBefore);
+  await expand.click();
+  await page.keyboard.press('+');
+  await expect(dialog.getByLabel('Diagram zoom', { exact: true })).toHaveText('125%');
+  await dialog.getByRole('button', { name: 'Fit diagram', exact: true }).click();
+  await expect(dialog.getByLabel('Diagram zoom', { exact: true })).toHaveText('100%');
+  await page.setViewportSize({ width: 820, height: 620 });
+  await expect.poll(async () => (await expandedViewport.boundingBox())!.width).toBeLessThan(expandedBounds.width);
+  const resizedBounds = (await expandedViewport.boundingBox())!;
+  expect(resizedBounds.height).toBeLessThan(expandedBounds.height);
+  expect(resizedBounds.x + resizedBounds.width).toBeLessThanOrEqual(820);
+  expect(resizedBounds.y + resizedBounds.height).toBeLessThanOrEqual(620);
+  if (process.platform === 'darwin') expect((await dialog.boundingBox())!.y).toBeGreaterThanOrEqual(62);
+  await expectCompactHeader();
+  await page.screenshot({ path: 'tmp/slate-expanded-titlebar.png' });
+  const fitted = await dialog.locator('.diagram-canvas').boundingBox();
+  expect(fitted!.width).toBeLessThanOrEqual(resizedBounds.width + 1);
+  expect(fitted!.height).toBeLessThanOrEqual(resizedBounds.height + 1);
+  await page.setViewportSize({ width: 1120, height: 800 });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(expand).toBeFocused();
+  await expect(inline.locator('svg')).toContainText('Stage 13');
+  // The resize refits both canvases, so capture the new inline position before reopening.
+  await inline.getByRole('button', { name: 'Zoom in diagram', exact: true }).click();
+  const restoredTransform = await inline.locator('.diagram-canvas').evaluate(element => element.style.transform);
+  await expand.click();
+  await dialog.getByRole('button', { name: 'Close expanded diagram', exact: true }).click();
+  expect(await inline.locator('.diagram-canvas').evaluate(element => element.style.transform)).toBe(restoredTransform);
+  expect(await page.locator('.document-scroll').evaluate(element => element.scrollTop)).toBe(scrollBefore);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(markdown);
+  expect(await readFile(file, 'utf8')).toBe(markdown);
+});
+
 test('footer contains company and repository links without document statistics', async () => {
   const footer = page.locator('footer');
   await expect(footer).toContainText('© 2026 by M45 Engineering Inc.');
