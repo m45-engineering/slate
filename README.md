@@ -46,7 +46,7 @@ Download both installers from the [v0.1.4 release](https://github.com/m45-engine
 - A single compact toolbar, high-contrast monochrome controls, and a blank document at startup.
 - A wider visual document area and document zoom from 75% to 200%, without scaling the application controls.
 - Headings, bold, italic, strikethrough, links, lists, checkboxes, and quotes.
-- Editable Markdown tables and fenced code blocks. Mermaid diagrams use a rounded, shadow-free neutral style. Scroll over a diagram to zoom, drag to move it, and choose **Fit** to reset the view. Add or edit their fenced source in Markdown view.
+- Editable Markdown tables and fenced code blocks. Mermaid diagrams use a rounded, shadow-free neutral style. Scroll over a diagram to zoom, drag to move it, and choose **Fit** to reset the view. Choose **Expand** for a nearly full-window canvas that resizes with the app; press Escape or **Close** to return to the same inline view. Add or edit their fenced source in Markdown view.
 - Inline and display LaTeX formulas, rendered locally with KaTeX and preserved in Markdown and PDF exports.
 - Local PDF export for Markdown, including Mermaid diagrams, tables, task lists, clickable web links, and page numbers.
 - Native Open, Save, Save As, keyboard shortcuts, and `.md` / `.markdown` file associations.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5 - 2026-11-15
+
+- Expand Mermaid diagrams into a nearly full-window dialog with zoom, pan, and Fit. Resize the app to resize the canvas, and return to the same inline view without changing the document.
+- Keep expanded diagrams below the native macOS title bar so the window buttons remain clear of the dialog.
+- Put the expanded diagram's title, zoom controls, and Close button in one compact row to leave more room for the canvas.
+
 ## 0.1.4 - 2026-11-13
 
 - Zoom Mermaid diagrams with the mouse wheel, drag to pan within the diagram canvas, and use Fit to restore the full view. Support zoom buttons and keyboard controls without changing the Markdown source.

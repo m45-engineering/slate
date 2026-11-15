@@ -2,11 +2,33 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from './ui/button';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from './ui/dialog';
 
 type Layout = { width: number; height: number; viewportWidth: number; viewportHeight: number; fit: number };
 type View = { scale: number; x: number; y: number };
 
 export function DiagramViewer({ svg }: { svg: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const dialog = useRef<HTMLDivElement>(null);
+
+  return <Dialog open={expanded} onOpenChange={setExpanded}>
+    <DiagramCanvas svg={svg} suspended={expanded} action={<DialogTrigger asChild>
+      <Button variant="ghost" size="sm" aria-label="Expand diagram">Expand</Button>
+    </DialogTrigger>} />
+    <DialogContent ref={dialog} className="diagram-dialog" aria-describedby={undefined} onOpenAutoFocus={event => {
+      event.preventDefault();
+      dialog.current?.querySelector<HTMLElement>('.diagram-viewport')?.focus();
+    }}>
+      <DiagramCanvas svg={svg} expanded action={
+        <Button variant="ghost" size="sm" aria-label="Close expanded diagram" onClick={() => setExpanded(false)}>Close</Button>
+      } />
+    </DialogContent>
+  </Dialog>;
+}
+
+function DiagramCanvas({ svg, expanded = false, suspended = false, action }: {
+  svg: string; expanded?: boolean; suspended?: boolean; action?: React.ReactNode;
+}) {
   const viewport = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: number; x: number; y: number } | null>(null);
@@ -23,7 +45,8 @@ export function DiagramViewer({ svg }: { svg: string }) {
     const resize = () => {
       const width = element.clientWidth;
       if (!width) return;
-      const height = Math.max(120, Math.min(box.height, box.height * width / box.width, window.innerHeight * 0.65, 560));
+      const height = expanded ? element.clientHeight : Math.max(120, Math.min(box.height, box.height * width / box.width, window.innerHeight * 0.65, 560));
+      if (!height) return;
       if (width === previousWidth && height === previousHeight) return;
       previousWidth = width; previousHeight = height;
       const fit = Math.min(1, width / box.width, height / box.height);
@@ -35,7 +58,7 @@ export function DiagramViewer({ svg }: { svg: string }) {
     observer.observe(element);
     window.addEventListener('resize', resize);
     return () => { observer.disconnect(); window.removeEventListener('resize', resize); };
-  }, [svg]);
+  }, [svg, expanded]);
 
   const fit = useCallback(() => {
     if (layout) setView({ scale: layout.fit, x: (layout.viewportWidth - layout.width * layout.fit) / 2, y: (layout.viewportHeight - layout.height * layout.fit) / 2 });
@@ -68,14 +91,15 @@ export function DiagramViewer({ svg }: { svg: string }) {
 
   return <div className="diagram-viewer">
     <div className="diagram-controls">
-      <span>Scroll to zoom · Drag to move</span>
+      {expanded ? <DialogTitle className="diagram-dialog-title">Mermaid diagram</DialogTitle> : <span>Scroll to zoom · Drag to move</span>}
       <Button variant="ghost" size="sm" aria-label="Zoom out diagram" onClick={() => zoom(1 / 1.25)}>−</Button>
       <output aria-label="Diagram zoom">{layout ? Math.round(view.scale / layout.fit * 100) : 100}%</output>
       <Button variant="ghost" size="sm" aria-label="Zoom in diagram" onClick={() => zoom(1.25)}>+</Button>
       <Button variant="ghost" size="sm" aria-label="Fit diagram" onClick={fit}>Fit</Button>
+      {action}
     </div>
-    <div ref={viewport} className={`diagram-viewport${panning ? ' is-panning' : ''}`} style={{ height: layout?.viewportHeight ?? 120 }}
-      tabIndex={0} role="group" aria-label="Diagram canvas" onDoubleClick={fit}
+    <div ref={viewport} className={`diagram-viewport${panning ? ' is-panning' : ''}`} style={expanded ? undefined : { height: layout?.viewportHeight ?? 120 }}
+      tabIndex={0} role="group" aria-label="Diagram canvas" aria-description="Scroll to zoom · Drag to move" onDoubleClick={fit}
       onPointerDown={event => {
         if (event.button !== 0) return;
         event.preventDefault(); event.stopPropagation();
@@ -110,7 +134,8 @@ export function DiagramViewer({ svg }: { svg: string }) {
       }}>
       <div ref={canvas} className="diagram-canvas" role="img" aria-label="Mermaid diagram"
         style={{ width: layout?.width, height: layout?.height, transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
-        dangerouslySetInnerHTML={{ __html: svg }} />
+        // Keep the inline view's state, but avoid duplicate SVG IDs while the dialog is open.
+        dangerouslySetInnerHTML={{ __html: suspended ? '' : svg }} />
     </div>
   </div>;
 }
