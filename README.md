@@ -12,7 +12,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-0.1.5-mac-arm64.dmg` from the [v0.1.5 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.5). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-0.1.6-mac-arm64.dmg` from the [v0.1.6 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.6). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -22,13 +22,13 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-0.1.5-win-x64.exe` from the [v0.1.5 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.5) for a standard Intel/AMD PC.
+1. Download `Slate-0.1.6-win-x64.exe` from the [v0.1.6 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.6) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Download both installers from the [v0.1.5 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.5). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
+Download both installers from the [v0.1.6 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.6). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
 
 ## Features
 
@@ -38,11 +38,13 @@ Download both installers from the [v0.1.5 release](https://github.com/m45-engine
 - Source editing with line numbers, Geist Mono, document zoom, and the same explicit Save and conflict protection. Supports TypeScript/JavaScript, Python, C/C++, SQL, JSON/JSONL, YAML, XML/XMI/ReqIF, HTML/SVG source, CSS, CSV, shell scripts, patches, plain text, and common extensionless files such as Dockerfile and Makefile.
 - Create files and folders directly from the sidebar: use the icons beside the workspace name for the root, or right-click a folder for New File / New Folder. New files open in a tab; existing files are never replaced.
 - Drag files or folders onto another folder in the sidebar to move them. Hovering expands a folder; drop onto the workspace heading to move back to the root. Open tabs keep their drafts and follow the move. Moves refuse existing destination names.
+- Select multiple files with ⌘-click on macOS or Ctrl-click on Windows; Shift-click selects a visible range. Drag the selected group into a folder, or choose **Move N files…** from its context menu. Destination conflicts are checked before any file moves.
 - Drop files from Finder or another file manager onto a sidebar folder or the workspace heading to copy them there. The originals stay in place; existing destination files are never replaced.
 - Right-click files or folders in the sidebar (including search results) to rename, move, or delete them. Move uses the native folder picker within the open workspace; Delete confirms before sending the item to the system Trash. Open tabs follow renamed or moved files, including unsaved edits.
 - Multiple document tabs with a blue dot for unsaved changes, individual close buttons, drag reordering, and a right-click menu for Close / Close Others / Close All. Switching tabs keeps each draft in memory.
-- Reopens the last folder and saved-file tabs in their previous order on restart, reading each file's latest contents from disk.
-- Opens centered at 90% of the current display's available width and height, leaving the menu bar and Dock or taskbar clear.
+- Independent windows through **File → New Window** (⌘⇧N / Ctrl+Shift+N), each with its own folder, document tabs, unsaved drafts, and save prompts.
+- Reopens saved workspaces and their file tabs in their previous order on restart, reading each file's latest contents from disk. Recovery drafts stay separate between windows.
+- Opens centered at 96% of the current display's available width and height, leaving the menu bar and Dock or taskbar clear.
 - A single compact toolbar, high-contrast monochrome controls, and a blank document at startup.
 - A wider visual document area and document zoom from 75% to 200%, without scaling the application controls.
 - Headings, bold, italic, strikethrough, links, lists, checkboxes, and quotes.
@@ -70,7 +72,7 @@ Run these commands in a terminal such as Ghostty on macOS or PowerShell on Windo
 
 To open a repository during development, use `pnpm dev -- /absolute/path/to/repository`, or `pnpm dev -- C:\work\repository` on Windows. To restart development, quit Slate, stop the command with **Ctrl+C** if it is still running, and run `pnpm dev` again.
 
-After the first session, `pnpm dev` resumes the last open folder, saved-file tabs, their order, and the active saved file. Passing the same folder also resumes its last file; explicitly passing another file or folder takes precedence. Missing paths are skipped with a notice. Slate stores only the remembered paths in `workspace.json` in its application settings directory, outside your repository. Unsaved new documents continue to use the separate draft-recovery flow.
+After the first session, `pnpm dev` resumes the open workspaces, saved-file tabs, their order, and active saved files. Passing the same folder also resumes its last file; explicitly passing another file or folder takes precedence. Missing paths are skipped with a notice. Slate stores workspace identities and remembered paths in `workspace.json` in its application settings directory, outside your repository. Unsaved documents use separate recovery storage for each window.
 
 To build and run the production desktop app from source:
 
@@ -106,11 +108,12 @@ For development, after `pnpm build`:
 pnpm start -- /absolute/path/to/document.md
 ```
 
-The application reuses its existing window. Opening another document adds a tab, or focuses its existing tab. Closing a tab, closing the window, or quitting offers Save / Discard / Cancel when there are unsaved changes. Open a folder from the Open menu or the sidebar. Expanding a folder reads its immediate children, so opening a repository does not scan every file. The tree refreshes when you return to Slate or click Refresh; `.git`, `node_modules`, `.next`, `.venv`, and `__pycache__` are hidden. Symbolic links are shown but cannot be opened from the tree. Opening a file directly shows its containing folder when no folder is already open.
+Opening a document from another tool uses the active Slate window and adds a tab, or focuses its existing tab. Choose **File → New Window** to work with another repository independently. Closing a tab, closing a window, or quitting offers Save / Discard / Cancel when there are unsaved changes; quitting checks every window and checks again if you keep editing during a prompt. Open a folder from the Open menu or the sidebar. Expanding a folder reads its immediate children, so opening a repository does not scan every file. The tree refreshes when you return to Slate or click Refresh; `.git`, `node_modules`, `.next`, `.venv`, and `__pycache__` are hidden. Symbolic links are shown but cannot be opened from the tree. Opening a file directly shows its containing folder when no folder is already open.
 
 | Action | macOS | Windows |
 | --- | --- | --- |
 | New | ⌘N | Ctrl+N |
+| New window | ⌘⇧N | Ctrl+Shift+N |
 | Open | ⌘O | Ctrl+O |
 | Open folder | ⌘⇧O | Ctrl+Shift+O |
 | Save | ⌘S | Ctrl+S |
@@ -129,7 +132,7 @@ pnpm package:mac   # run on macOS: DMG for the current architecture
 pnpm package:win   # run on Windows: NSIS installer for the current architecture
 ```
 
-First run `pnpm install --frozen-lockfile`. Each packaging command regenerates the icons, builds the UI, and bundles Electron with the runtime assets. Outputs are generated in `release/` and are not tracked. Build on the target operating system with a matching Node.js architecture. This first version has no cross-compilation setup.
+First run `pnpm install --frozen-lockfile`. Each packaging command regenerates the icons, builds the UI, and bundles Electron with the runtime assets. Outputs are generated in `release/` and are not tracked. Build and test on the target operating system with a matching Node.js architecture. The release workflow uses native macOS and Windows runners; a cross-built installer still needs runtime validation on its target OS.
 
 [The build workflow](.github/workflows/build.yml) runs for pull requests and pushes to `main`, avoiding duplicate runs for PR branches. A lightweight change check skips the desktop jobs when only `README.md`, `CHANGELOG.md`, or files under `docs/` changed, including README images. Documentation-only changes do not install dependencies, run tests, or build installers, even when the validation cache is missing or expired. Application, test, and workflow changes use the existing per-platform validation cache and run the full checks and build when needed. An unavailable comparison commit also takes the build path. Maintainers can force fresh tests and installers with **Actions → Build Slate → Run workflow**. Full runs upload installers as build artifacts; they do not publish releases.
 
@@ -143,7 +146,7 @@ The initial update introducing documentation-only skipping also skips the deskto
 
 Open supported files from the sidebar, filename search, native file picker, or command line. Files must contain UTF-8 text, contain no NUL bytes, and be no larger than 10 MB. Binary formats such as PDF, PNG, and XLSX are not editable.
 
-Text and code use a source editor with line numbers and locally bundled syntax highlighting. The high-contrast colors preserve the white background and Geist Mono typography. They are never converted through Markdown, formatted automatically, or executed. HTML, SVG, and MDX remain source text. Highlighting follows the filename for common programming, configuration, and markup languages. Plain text, unknown languages, and files over 200,000 characters use readable plain text to keep editing responsive. Code completion and language tooling are not included in this version. The shared supported-extension list is in [electron/file-types.cjs](electron/file-types.cjs).
+Text and code use a source editor with line numbers, 12px Geist Mono text, and locally bundled syntax highlighting. Markdown source keeps its 13px text. The high-contrast colors preserve the white background. Files are never converted through Markdown, formatted automatically, or executed. HTML, SVG, and MDX remain source text. Highlighting follows the filename for common programming, configuration, and markup languages. Plain text, unknown languages, and files over 200,000 characters use readable plain text to keep editing responsive. Code completion and language tooling are not included in this version. The shared supported-extension list is in [electron/file-types.cjs](electron/file-types.cjs).
 
 ## Markdown fidelity
 
@@ -151,7 +154,7 @@ Opening, switching views, and saving without edits preserve the original file by
 
 This version deliberately keeps YAML/TOML front matter, HTML, images, reference definitions, and footnotes in source mode. It does not claim lossless visual editing for every Markdown dialect. The source-mode guard covers these known unsupported forms; other custom Markdown extensions may also require source editing. Tiptap's Markdown extension is currently beta.
 
-Mermaid uses strict rendering. Code is displayed, never executed. Web links are blue and open in the default browser when clicked. Remote images and embedded HTML are not rendered. File operations are restricted to the document selected through the OS or native file dialog.
+Mermaid uses strict rendering. Code is displayed, never executed. Link destinations appear in the footer on hover or focus. Linked documents inside the open folder open in Slate; web links show their full URL in a confirmation before opening the default browser. Heading links such as `#getting-started` and `guide.md#getting-started` scroll to the target heading. Repeated headings use suffixes such as `-1` and `-2`. Remote images and embedded HTML are not rendered. File operations are restricted to the selected documents and open workspace.
 
 ### Formulas
 
@@ -205,7 +208,8 @@ The Next.js UI is exported into `out/` and loaded by Electron through a local `s
 
 - `src/components/slate-editor.tsx`: document UI and the two editor views.
 - `src/components/code-block.tsx`: fenced code and Mermaid previews.
-- `electron/main.cjs`: windows, menus, native dialogs, and file watching.
+- `electron/main.cjs`: application lifecycle, window routing, and workspace persistence.
+- `electron/workspace-window.cjs`: each window's menus, native dialogs, documents, and file watching.
 - `electron/file-store.cjs`: UTF-8 file I/O, conflict checks, and replacement writes.
 - `electron/folder-store.cjs`: directory listings and access restricted to the selected folder.
 - `src/components/folder-sidebar.tsx`: the shadcn folder navigator and Outline tab.

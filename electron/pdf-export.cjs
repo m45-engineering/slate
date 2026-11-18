@@ -11,11 +11,12 @@ async function exportPdf({ parent, name, content, documentPath, url }) {
     filters: [{ name: 'PDF document', extensions: ['pdf'] }],
   });
   if (choice.canceled || !choice.filePath) return { canceled: true };
+  const channel = `pdf:${randomUUID()}`;
   const destination = /\.pdf$/i.test(choice.filePath) ? choice.filePath : choice.filePath + '.pdf';
   const temporary = path.join(path.dirname(destination), `.${path.basename(destination)}.${randomUUID()}.tmp`);
   const preview = new BrowserWindow({
     show: false, width: 900, height: 1100,
-    webPreferences: { preload: path.join(__dirname, 'pdf-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+    webPreferences: { additionalArguments: [`--slate-pdf-channel=${channel}`], preload: path.join(__dirname, 'pdf-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   preview.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   preview.webContents.on('will-navigate', event => event.preventDefault());
@@ -23,7 +24,7 @@ async function exportPdf({ parent, name, content, documentPath, url }) {
   let timer;
   let onReady;
   try {
-    ipcMain.handle('pdf:document', event => {
+    ipcMain.handle(`${channel}:document`, event => {
       if (!trusted(event)) throw new Error('Untrusted PDF request.');
       return { name, content };
     });
@@ -34,7 +35,7 @@ async function exportPdf({ parent, name, content, documentPath, url }) {
         if (typeof error === 'string' && error) reject(new Error(error));
         else resolve();
       };
-      ipcMain.on('pdf:ready', onReady);
+      ipcMain.on(`${channel}:ready`, onReady);
       preview.webContents.once('render-process-gone', () => reject(new Error('The PDF renderer closed unexpectedly.')));
       preview.once('closed', () => reject(new Error('The PDF renderer was closed.')));
       void preview.loadURL(url).catch(reject);
@@ -52,8 +53,8 @@ async function exportPdf({ parent, name, content, documentPath, url }) {
     return { path: destination };
   } finally {
     clearTimeout(timer);
-    ipcMain.removeHandler('pdf:document');
-    if (onReady) ipcMain.removeListener('pdf:ready', onReady);
+    ipcMain.removeHandler(`${channel}:document`);
+    if (onReady) ipcMain.removeListener(`${channel}:ready`, onReady);
     if (!preview.isDestroyed()) preview.destroy();
     await fs.rm(temporary, { force: true });
   }

@@ -10,8 +10,10 @@ export type FolderSearch = { entries?: FolderEntry[]; total?: number; unreadable
 
 export interface DesktopBridge {
   platform: string;
+  workspaceId: string;
   ready(): Promise<WorkspaceDocuments>;
   open(): Promise<FileResult>;
+  openLink(href: string, id: string): Promise<FileResult & { fragment?: string }>;
   newDocument(draft?: { name: string; content: string }): Promise<FileResult>;
   save(content: string, saveAs: boolean, options?: { id?: string; path: string | null; confirmationId?: number }): Promise<FileResult>;
   exportPdf(content: string, id: string): Promise<{ path?: string; canceled?: boolean; error?: string }>;
@@ -35,6 +37,7 @@ export interface DesktopBridge {
   createEntry(parent: string, name: string, kind: 'file' | 'directory'): Promise<{ changed?: boolean; path?: string; error?: string; canceled?: boolean }>;
   renameEntry(path: string, name: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
   moveEntry(path: string, destination?: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
+  moveFiles(paths: string[], destination?: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string; paths?: string[] }>;
   importFiles(files: File[], destination: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
   trashEntry(path: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
   onFolder(callback: (folder: LocalFolder) => void): () => void;

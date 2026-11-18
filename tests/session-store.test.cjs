@@ -56,3 +56,31 @@ test('restores multiple saved tabs in order and reads legacy single-file session
   await fs.writeFile(store.filename, JSON.stringify({ version: 1, folder: root, file: files[0] }));
   assert.deepEqual(await store.load(), { folder: root, file: files[0], files: [files[0]] });
 });
+
+test('remembers independent windows and keeps legacy readers pointed at the first workspace', async t => {
+  const { root, store } = await fixture(t);
+  const windows = [
+    { id: 'main', folder: root, file: path.join(root, 'one.md'), files: [path.join(root, 'one.md')] },
+    { id: 'second', folder: path.join(root, 'other'), file: path.join(root, 'other', 'two.md'), files: [path.join(root, 'other', 'two.md')] },
+  ];
+  await store.saveWindows(windows);
+  assert.deepEqual(await new SessionStore(path.dirname(store.filename)).loadWindows(), windows);
+  const { id, ...first } = windows[0];
+  assert.deepEqual(await store.load(), first);
+  await store.saveWindows(windows.slice(1));
+  assert.deepEqual(await store.loadWindows(), windows.slice(1));
+});
+
+test('window sessions migrate old workspaces and reject invalid or duplicate window identities', async t => {
+  const { root, store } = await fixture(t);
+  assert.deepEqual(await store.loadWindows(), [{ id: 'main', folder: null, file: null, files: [] }]);
+  await store.save({ folder: root, file: null });
+  assert.deepEqual(await store.loadWindows(), [{ id: 'main', folder: root, file: null, files: [] }]);
+  await fs.writeFile(store.filename, JSON.stringify({ version: 2, windows: [
+    { id: 'first', folder: root, file: null, files: [] },
+    { id: 'first', folder: '/wrong', file: null, files: [] },
+    { id: '../invalid', folder: root, file: null, files: [] },
+    { id: 'no-files' },
+  ] }));
+  assert.deepEqual(await store.loadWindows(), [{ id: 'first', folder: root, file: null, files: [] }]);
+});

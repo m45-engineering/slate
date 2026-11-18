@@ -4,6 +4,9 @@ const { randomUUID } = require('node:crypto');
 
 const emptySession = () => ({ folder: null, file: null, files: [] });
 const absolutePath = value => typeof value === 'string' && path.isAbsolute(value) ? value : null;
+const normalizeSession = ({ folder, file, files = file ? [file] : [] }) => ({
+  folder: absolutePath(folder), file: absolutePath(file), files: [...new Set(files.map(absolutePath).filter(Boolean))],
+});
 
 class SessionStore {
   constructor(directory) {
@@ -26,7 +29,35 @@ class SessionStore {
   }
 
   save({ folder, file, files = file ? [file] : [] }) {
-    const serialized = JSON.stringify({ version: 2, folder: absolutePath(folder), file: absolutePath(file), files: [...new Set(files.map(absolutePath).filter(Boolean))] }) + '\n';
+    return this.write({ version: 2, ...normalizeSession({ folder, file, files }) });
+  }
+
+  async loadWindows() {
+    await this.pending.catch(() => {});
+    try {
+      const saved = JSON.parse(await fs.readFile(this.filename, 'utf8'));
+      if (saved.version === 2 && Array.isArray(saved.windows)) {
+        const ids = new Set();
+        const windows = saved.windows.filter(item => {
+          if (typeof item?.id !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(item.id) || ids.has(item.id) || !Array.isArray(item.files)) return false;
+          ids.add(item.id);
+          return true;
+        }).map(item => ({ id: item.id, ...normalizeSession(item) }));
+        if (windows.length) return windows;
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
+    }
+    return [{ id: 'main', ...await this.load() }];
+  }
+
+  saveWindows(windows) {
+    const saved = windows.map(item => ({ id: item.id, ...normalizeSession(item) }));
+    return this.write({ version: 2, ...saved[0], windows: saved });
+  }
+
+  write(value) {
+    const serialized = JSON.stringify(value) + '\n';
     this.pending = this.pending.catch(() => {}).then(async () => {
       if (serialized === this.lastSaved) return;
       await fs.mkdir(path.dirname(this.filename), { recursive: true });

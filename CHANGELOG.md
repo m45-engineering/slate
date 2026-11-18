@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.6 - 2026-11-18
+
+- Preview link destinations in the footer. Open linked documents inside the current folder in Slate, and confirm the full URL before opening web links in the default browser.
+- Follow heading links within a document or into another document, including repeated headings, Unicode titles, and targets open in Markdown view.
+- Add independent windows through File → New Window (⌘⇧N / Ctrl+Shift+N), with separate folders, tabs, recovery drafts, and save prompts. Restore open workspaces on restart.
+- Keep PDF exports isolated across windows and recheck unsaved edits made while another window's quit prompt is open.
+- Select multiple files with ⌘/Ctrl-click or Shift-click, then drag them into a folder or use Move files. Check destination conflicts before moving and preserve open drafts at their new paths.
+- Use slightly smaller 12px text for code files and open windows at 96% of the display's available width and height.
+
 ## 0.1.5 - 2026-11-15
 
 - Expand Mermaid diagrams into a nearly full-window dialog with zoom, pan, and Fit. Resize the app to resize the canvas, and return to the same inline view without changing the document.

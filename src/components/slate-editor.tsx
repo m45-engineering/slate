@@ -16,6 +16,7 @@ import { Textarea } from './ui/textarea';
 import { SourceEditor } from './source-editor';
 import { useFindReplace } from './use-find-replace';
 import { FindHighlights } from '@/lib/find-highlights';
+import { headingIndex } from '@/lib/headings';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from './ui/dialog';
 import { TooltipHint } from './ui/tooltip';
@@ -25,11 +26,19 @@ import type { PanelImperativeHandle } from 'react-resizable-panels';
 
 const RECOVERY_KEY = 'slate-unsaved-drafts-v2';
 const LEGACY_RECOVERY_KEY = 'slate-unsaved-draft-v1';
+function recoveryKey() {
+  const id = window.slate?.workspaceId;
+  return id && id !== 'main' ? `${RECOVERY_KEY}-${id}` : RECOVERY_KEY;
+}
 const ZOOM_LEVELS = [75, 90, 100, 110, 125, 150, 175, 200];
 type Mode = 'visual' | 'source';
 type TabDraft = { source: string; savedSource: string; mode: Mode; diskChanged: boolean; visualState: EditorState | null; scrollTop: number; selection: [number, number] | null };
 type Heading = { text: string; level: number; index: number };
 type Confirmation = { title: string; description: string; action: string; allowSave?: boolean; requestId?: number };
+
+function linkAt(target: EventTarget | null) {
+  return target instanceof Element ? target.closest('a[href]')?.getAttribute('href') ?? '' : '';
+}
 
 function Tool({ label, icon, active, disabled, onClick }: { label: string; icon: IconName; active?: boolean; disabled?: boolean; onClick(): void }) {
   return <TooltipHint content={label}><Button variant="ghost" size="icon" type="button" className={`tool ${active ? 'active' : ''}`} aria-label={label} aria-pressed={active === undefined ? undefined : active} disabled={disabled} onMouseDown={e => e.preventDefault()} onClick={onClick}><Icon name={icon} /></Button></TooltipHint>;
@@ -94,6 +103,9 @@ export function SlateEditor() {
   const [isMac, setIsMac] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+  const [hoveredLink, setHoveredLink] = useState('');
+  const [focusedLink, setFocusedLink] = useState('');
+  const [headingTarget, setHeadingTarget] = useState<{ id: string; fragment: string } | null>(null);
   const [formula, setFormula] = useState<FormulaSelection | null>(null);
   const [recoveries, setRecoveries] = useState<SlateDocument[]>([]);
   const [recoveryReady, setRecoveryReady] = useState(false);
@@ -102,10 +114,10 @@ export function SlateEditor() {
     if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
     recoveryTimer.current = null;
     try {
-      const stored: SlateDocument[] = JSON.parse(localStorage.getItem(RECOVERY_KEY) || '[]');
+      const stored: SlateDocument[] = JSON.parse(localStorage.getItem(recoveryKey()) || '[]');
       const remaining = stored.filter(draft => draft.id !== id);
-      if (remaining.length) localStorage.setItem(RECOVERY_KEY, JSON.stringify(remaining));
-      else localStorage.removeItem(RECOVERY_KEY);
+      if (remaining.length) localStorage.setItem(recoveryKey(), JSON.stringify(remaining));
+      else localStorage.removeItem(recoveryKey());
     } catch { /* Optional recovery storage. */ }
     setRecoveries(items => items.filter(draft => draft.id !== id));
   }, []);
@@ -167,7 +179,7 @@ export function SlateEditor() {
     const draft = tabDrafts.current.get(next.id);
     let recovered: SlateDocument | undefined;
     if (!draft && next.unsaved) {
-      try { recovered = (JSON.parse(localStorage.getItem(RECOVERY_KEY) || '[]') as SlateDocument[]).find(item => item.id === next.id); }
+      try { recovered = (JSON.parse(localStorage.getItem(recoveryKey()) || '[]') as SlateDocument[]).find(item => item.id === next.id); }
       catch { /* The native file remains available if recovery storage cannot be read. */ }
     }
     const nextSource = draft?.source ?? recovered?.content ?? next.content;
@@ -183,6 +195,7 @@ export function SlateEditor() {
     liveState.current = { source: nextSource, savedSource: nextSaved, mode: nextMode, diskChanged: changed };
     setDoc(next); setSource(nextSource); setSavedSource(nextSaved); setMode(nextMode);
     setDiskChanged(changed); if (!preserveNotice) setNotice(''); setLinkOpen(false); setFormula(null);
+    setHoveredLink(''); setFocusedLink('');
     if (editor && nextMode === 'visual') {
       if (draft?.visualState) editor.view.updateState(draft.visualState);
       else {
@@ -337,6 +350,23 @@ export function SlateEditor() {
     fileInput.current?.click();
   }, []);
 
+  const openLink = useCallback(async (href: string) => {
+    try {
+      if (href.trim().startsWith('#')) {
+        setHeadingTarget({ id: docRef.current.id, fragment: href.trim() });
+        return;
+      }
+      if (window.slate) {
+        const result = await window.slate.openLink(href, docRef.current.id);
+        if (result.error) setNotice(result.error);
+        else if (result.document && result.fragment) setHeadingTarget({ id: result.document.id, fragment: result.fragment });
+      } else if (/^(https?:\/\/|\/\/)/i.test(href)) {
+        const url = new URL(href, window.location.href).href;
+        if (await requestConfirmation({ title: 'Open external link?', description: `${url}\n\nOnly open links you trust.`, action: 'Open link' })) window.open(url, '_blank', 'noopener,noreferrer');
+      } else setNotice('Open Slate on your desktop to follow a document link.');
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'The link could not be opened.'); }
+  }, [requestConfirmation]);
+
   const openFolder = useCallback(async () => {
     if (!window.slate) { setNotice('Open Slate on your desktop to browse a local folder.'); return; }
     const result = await window.slate.openFolder();
@@ -349,8 +379,8 @@ export function SlateEditor() {
     setDesktop(Boolean(window.slate));
     setIsMac(window.slate?.platform === 'darwin' || /Mac/.test(navigator.platform));
     try {
-      const stored = localStorage.getItem(RECOVERY_KEY);
-      const legacy = localStorage.getItem(LEGACY_RECOVERY_KEY);
+      const stored = localStorage.getItem(recoveryKey());
+      const legacy = recoveryKey() === RECOVERY_KEY ? localStorage.getItem(LEGACY_RECOVERY_KEY) : null;
       const candidates = stored ? JSON.parse(stored) : legacy ? [{ ...JSON.parse(legacy), id: crypto.randomUUID() }] : [];
       if (Array.isArray(candidates)) setRecoveries(candidates.filter(candidate => typeof candidate?.id === 'string' && typeof candidate?.name === 'string' && typeof candidate?.content === 'string'));
     } catch { /* Storage may be unavailable; file editing still works. */ }
@@ -387,9 +417,9 @@ export function SlateEditor() {
         if (draft && draft.source !== draft.savedSource) entries.set(tab.id, { id: tab.id, path: null, name: tab.name, content: draft.source });
       }
       try {
-        if (entries.size) localStorage.setItem(RECOVERY_KEY, JSON.stringify([...entries.values()]));
-        else localStorage.removeItem(RECOVERY_KEY);
-        localStorage.removeItem(LEGACY_RECOVERY_KEY);
+        if (entries.size) localStorage.setItem(recoveryKey(), JSON.stringify([...entries.values()]));
+        else localStorage.removeItem(recoveryKey());
+        if (recoveryKey() === RECOVERY_KEY) localStorage.removeItem(LEGACY_RECOVERY_KEY);
       } catch { setNotice('Draft recovery is unavailable. Save your documents to keep your changes.'); }
     }, 250);
     return () => { if (recoveryTimer.current) clearTimeout(recoveryTimer.current); recoveryTimer.current = null; };
@@ -461,13 +491,15 @@ export function SlateEditor() {
     editor?.state.doc.descendants(node => {
       if (node.type.name === 'heading') headings.push({ text: node.textContent || 'Untitled section', level: node.attrs.level, index: headings.length });
     });
-  } else if (markdownDocument) {
-    let inFence = false;
-    source.split('\n').forEach((line, index) => {
-      if (/^\s*(`{3,}|~{3,})/.test(line)) inFence = !inFence;
-      const match = !inFence && line.match(/^(#{1,6})\s+(.+)/);
-      if (match) headings.push({ text: match[2], level: match[1].length, index });
-    });
+  } else if (markdownDocument && editor?.markdown) {
+    let index = 0;
+    for (const token of editor.markdown.instance.lexer(source)) {
+      if (token.type === 'heading') {
+        const parsed = editor.schema.nodeFromJSON(editor.markdown.parse(token.raw));
+        headings.push({ text: parsed.textContent, level: token.depth, index });
+      }
+      index += (token.raw.match(/\n/g) || []).length;
+    }
   }
   const toolbarDisabled = mode !== 'visual' || !editor;
   const inTable = editor?.isActive('table') && !toolbarDisabled;
@@ -478,14 +510,42 @@ export function SlateEditor() {
       scrollArea.current?.querySelectorAll('.document-editor h1, .document-editor h2, .document-editor h3, .document-editor h4, .document-editor h5, .document-editor h6')[heading.index]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
       const offset = source.split('\n').slice(0, heading.index).join('\n').length + (heading.index ? 1 : 0);
-      sourceInput.current?.focus(); sourceInput.current?.setSelectionRange(offset, offset);
-      scrollArea.current?.scrollTo({ top: heading.index * 26, behavior: 'smooth' });
+      sourceInput.current?.focus({ preventScroll: true }); sourceInput.current?.setSelectionRange(offset, offset);
+      scrollArea.current?.querySelector('.line-numbers')?.children[heading.index]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }
 
+  useLayoutEffect(() => {
+    if (!headingTarget || headingTarget.id !== doc.id) return;
+    try {
+      const index = headingIndex(headings.map(heading => heading.text), headingTarget.fragment);
+      if (index < 0) setNotice(`Heading not found: ${decodeURIComponent(headingTarget.fragment)}`);
+      else { setNotice(''); jumpToHeading(headings[index]); }
+    } catch { setNotice('This heading link has an invalid URL fragment.'); }
+    setHeadingTarget(null);
+  });
+
   if (starting) return <div className="slate-startup" role="status" aria-label="Starting Slate"><img src="/slate-mark.svg" width="48" height="48" alt="" /><span>Slate</span><p>Opening your workspace…</p></div>;
 
-  return <div className={`slate-app ${desktop && isMac ? 'desktop-mac' : ''}`}>
+  return <div className={`slate-app ${desktop && isMac ? 'desktop-mac' : ''}`}
+    onMouseOver={event => setHoveredLink(linkAt(event.target))}
+    onMouseLeave={() => setHoveredLink('')}
+    onFocus={event => setFocusedLink(linkAt(event.target))}
+    onBlur={() => setFocusedLink('')}
+    onClickCapture={event => {
+      const href = linkAt(event.target);
+      if (!href) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void openLink(href);
+    }}
+    onAuxClickCapture={event => {
+      const href = linkAt(event.target);
+      if (!href || event.button !== 1) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void openLink(href);
+    }}>
     <header className="titlebar">
       <div className="brand"><Tool label="Toggle sidebar" icon="panel" active={outlineOpen} onClick={() => setOutlineOpen(!outlineOpen)} /><span>Slate</span></div>
       <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{markdownDocument && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>
@@ -563,13 +623,13 @@ export function SlateEditor() {
         {linkOpen && mode === 'visual' && <form className="link-popover" onSubmit={event => {
           event.preventDefault();
           if (!linkUrl) editor?.chain().focus().extendMarkRange('link').unsetLink().run();
-          else if (/^(https?:\/\/|mailto:|#|\.\.?\/)/i.test(linkUrl)) editor?.chain().focus().extendMarkRange('link').setLink({ href: linkUrl }).run();
-          else { setNotice('Use an https://, mailto:, relative, or #section link.'); return; }
+          else if (!/^[a-z][a-z\d+.-]*:/i.test(linkUrl) || /^(https?:\/\/|file:\/\/)/i.test(linkUrl)) editor?.chain().focus().extendMarkRange('link').setLink({ href: linkUrl }).run();
+          else { setNotice('Use an https:// URL or a document path.'); return; }
           setLinkOpen(false);
         }}><Input autoFocus aria-label="Link URL" placeholder="https://…" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} /><Button type="submit" size="sm">Apply</Button><Button variant="ghost" size="sm" onClick={() => setLinkOpen(false)}>Cancel</Button></form>}
         {inTable && <div className="table-actions" aria-label="Table actions"><span>Table</span><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().addRowAfter().run()}>+ Row</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().addColumnAfter().run()}>+ Column</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteRow().run()}>Delete row</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteColumn().run()}>Delete column</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteTable().run()}>Delete table</Button></div>}
         <div className="document-scroll" ref={scrollArea}>
-          <div className={`paper ${mode === 'source' ? 'source-paper' : ''}`} style={{ zoom: documentZoom / 100 }}>
+          <div className={`paper ${mode === 'source' ? 'source-paper' : ''} ${!markdownDocument ? 'code-paper' : ''}`} style={{ zoom: documentZoom / 100 }}>
             {/* Keep Tiptap mounted so its React plugins are not registered twice when switching views. */}
             <div hidden={mode !== 'visual'}><EditorContent editor={editor} /></div>{mode === 'source' && <SourceEditor key={doc.id} ref={sourceInput} value={source} filename={doc.name} label={markdownDocument ? 'Markdown source' : 'Source editor'} onChange={setSource} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
           </div>
@@ -583,6 +643,7 @@ export function SlateEditor() {
         <Button asChild variant="ghost" className="footer-link"><a href="https://www.m45.engineering/" target="_blank" rel="noopener noreferrer">© 2026 by M45 Engineering Inc.</a></Button>
         <TooltipHint content="Slate on GitHub" side="top"><Button asChild variant="ghost" size="icon" className="footer-github"><a href="https://github.com/m45-engineering/slate" target="_blank" rel="noopener noreferrer" aria-label="Slate on GitHub"><img src="/github-mark.svg" width="16" height="16" alt="" /></a></Button></TooltipHint>
       </div>
+      {(hoveredLink || focusedLink) && <span className="link-destination" aria-label="Link destination" title={hoveredLink || focusedLink}>{hoveredLink || focusedLink}</span>}
       <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="zoom-control" aria-label="Document zoom">{documentZoom}%<Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuRadioGroup value={String(documentZoom)} onValueChange={value => setDocumentZoom(Number(value))}>{ZOOM_LEVELS.map(value => <DropdownMenuRadioItem key={value} value={String(value)}>{value}%</DropdownMenuRadioItem>)}</DropdownMenuRadioGroup></DropdownMenuContent></DropdownMenu>
     </footer>
     <input ref={fileInput} type="file" hidden onChange={async event => {

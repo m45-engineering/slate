@@ -78,6 +78,33 @@ class FolderStore {
     return this.relocate(relativePath, path.join(parent, path.basename(from)));
   }
 
+  async planFileMoves(relativePaths, destinationFolder) {
+    if (!Array.isArray(relativePaths) || !relativePaths.length || relativePaths.some(item => typeof item !== 'string')) throw new Error('Select files to move.');
+    const parent = await this.resolve(destinationFolder);
+    if (!(await fs.stat(parent)).isDirectory()) throw new Error('Choose a destination folder.');
+    const sources = new Set();
+    const destinations = new Set();
+    const moves = [];
+    // Reject known conflicts across the whole selection before moving any file.
+    for (const relativePath of relativePaths) {
+      const from = await this.resolveEntry(relativePath);
+      if (!(await fs.stat(from)).isFile()) throw new Error('Select regular files to move together.');
+      if (sources.has(from)) continue;
+      sources.add(from);
+      const to = path.join(parent, path.basename(from));
+      if (from === to) continue;
+      const key = process.platform === 'linux' ? to : to.toLowerCase();
+      if (destinations.has(key)) throw new Error('Selected files have the same destination name. Nothing was moved.');
+      try {
+        await fs.lstat(to);
+        throw new Error(`${path.basename(to)} already exists in the destination. Nothing was moved.`);
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      destinations.add(key);
+      moves.push({ path: relativePath, destination: path.relative(this.root, to).split(path.sep).join('/') });
+    }
+    return moves;
+  }
+
   async importFiles(sources, destinationFolder) {
     if (!Array.isArray(sources) || !sources.length || sources.some(source => typeof source !== 'string' || !path.isAbsolute(source))) {
       throw new Error('Drop files from Finder or another file manager.');
