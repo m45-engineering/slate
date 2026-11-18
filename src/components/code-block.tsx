@@ -5,6 +5,7 @@ import CodeBlock from '@tiptap/extension-code-block';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { Input } from './ui/input';
 import { DiagramViewer } from './diagram-viewer';
+import { codeHighlightPlugin } from '@/lib/code-highlights';
 
 const diagramTheme = { theme: 'base', look: 'classic' } as const;
 
@@ -87,6 +88,7 @@ function CodeBlockView({ node, updateAttributes, editor }: NodeViewProps) {
 }
 
 export const SlateCodeBlock = CodeBlock.extend({
+  addProseMirrorPlugins() { return [...(this.parent?.() || []), codeHighlightPlugin()]; },
   // A longer fence preserves code containing triple backticks (including Markdown examples).
   renderMarkdown(node, helpers) {
     const text = node.content ? helpers.renderChildren(node.content) : '';

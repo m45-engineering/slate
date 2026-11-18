@@ -45,3 +45,20 @@ test('plain text and very large files retain the ordinary readable editor', asyn
   assert.equal(highlightSource('const value = 1;', 'notes.txt'), null);
   assert.equal(highlightSource('x'.repeat(MAX_HIGHLIGHT_CHARACTERS + 1), 'app.ts'), null);
 });
+
+test('fence languages and aliases highlight pseudocode without changing its text', async () => {
+  const { highlightCode, MAX_HIGHLIGHT_CHARACTERS } = await import('../src/lib/syntax-highlight.ts');
+  const source = '// Pseudocode\nconst action = await Nimble.choose({ choices: ["FINISH"] });\n';
+  for (const language of ['typescript', 'ts', ' TypeScript ', 'javascript', 'js']) {
+    const html = highlightCode(source, language);
+    assert.match(html, /hljs-keyword/);
+    assert.match(html, /hljs-string/);
+    assert.match(html, /hljs-comment/);
+    assert.equal(plainText(html), source);
+  }
+  assert.doesNotMatch(highlightCode(source, 'text'), /<span/);
+  for (const language of ['', 'unknown-language', 'mermaid']) {
+    assert.equal(highlightCode(source, language), null);
+  }
+  assert.equal(highlightCode('x'.repeat(MAX_HIGHLIGHT_CHARACTERS + 1), 'ts'), null);
+});
