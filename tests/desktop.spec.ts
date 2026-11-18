@@ -168,6 +168,66 @@ test('runs as an isolated desktop app with a live Mermaid preview', async () => 
   await page.screenshot({ path: 'tmp/slate-desktop.png' });
 });
 
+test('Visual code blocks highlight fence languages and keep edits and undo as plain code', async () => {
+  const block = page.locator('.code-block').last();
+  const code = block.locator('pre code').first();
+  await expect(code.locator('.hljs-keyword')).toHaveText('const');
+  await expect(code.locator('.hljs-keyword')).toHaveCSS('color', 'rgb(0, 72, 200)');
+  await expect(code.locator('.hljs-number')).toHaveText('42');
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await code.click();
+  await code.evaluate(element => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+  });
+  await page.keyboard.type(' // edited');
+  await expect(code.locator('.hljs-comment')).toHaveText('// edited');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(code).toHaveText('const value = 42;');
+  await expect(code.locator('.hljs-comment')).toHaveCount(0);
+  await page.keyboard.type(' // kept');
+  await expect(code.locator('.hljs-comment')).toHaveText('// kept');
+  const language = block.getByRole('textbox', { name: 'Code language' });
+  await language.fill('unknown-language');
+  await expect(code.locator('[class*="hljs-"]')).toHaveCount(0);
+  await expect(code).toHaveText('const value = 42; // kept');
+  await language.fill('ts');
+  await expect(code.locator('.hljs-keyword')).toHaveText('const');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  const saved = await source.inputValue();
+  expect(saved).toContain('```ts\nconst value = 42; // kept\n```');
+  expect(saved).not.toContain('hljs-');
+  await saveWithShortcut(file, saved);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await page.reload();
+  await expect(code.locator('.hljs-comment')).toHaveText('// kept');
+  await expect(page.getByRole('img', { name: 'Mermaid diagram' })).toBeVisible();
+  await page.screenshot({ path: 'tmp/slate-visual-code-highlighting.png' });
+});
+
+test('Visual code highlighting preserves Unicode, literal markup, and plain or unsupported fences', async () => {
+  const sample = '// 😀 Pseudocode\nconst message = "<script>window.highlightExecuted = true</script> & café";\nawait Nimble.choose({ choices: ["FINISH"] });';
+  const markdown = `# Code samples\n\n\`\`\`typescript\n${sample}\n\`\`\`\n\n\`\`\`text\nconst plain = true;\n\`\`\`\n\n\`\`\`unknown-language\nconst unknown = true;\n\`\`\`\n\n\`\`\`\nconst unlabeled = true;\n\`\`\`\n`;
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill(markdown);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  const blocks = page.locator('.code-block');
+  const code = blocks.first().locator('pre code').first();
+  expect(await code.textContent()).toBe(sample);
+  await expect(code.locator('.hljs-comment')).toHaveText('// 😀 Pseudocode');
+  await expect(code.locator('.hljs-keyword').first()).toHaveText('const');
+  await expect(code.locator('.hljs-string').first()).toHaveText('"<script>window.highlightExecuted = true</script> & café"');
+  await expect(code.locator('script')).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, 'highlightExecuted'))).toBeUndefined();
+  for (const index of [1, 2, 3]) await expect(blocks.nth(index).locator('[class*="hljs-"]')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(markdown);
+});
+
 test('new windows keep folders, drafts, saves, and menu commands independent', async () => {
   const otherFolder = path.join(directory, 'other-repo');
   await mkdir(otherFolder);

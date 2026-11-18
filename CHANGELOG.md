@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.7 - 2026-11-18
+
+- Highlight embedded code blocks in Visual view and PDF exports using their fence language, including aliases such as `ts` and `js`.
+- Update highlighting while editing code or changing its language without adding formatting to the saved Markdown. Keep plain text, unsupported languages, and oversized blocks readable, and preserve Mermaid previews.
+
 ## 0.1.6 - 2026-11-18
 
 - Preview link destinations in the footer. Open linked documents inside the current folder in Slate, and confirm the full URL before opening web links in the default browser.

@@ -14,13 +14,18 @@ hljs.registerLanguage('asciidoc', asciidoc);
 
 export const MAX_HIGHLIGHT_CHARACTERS = 200_000;
 
-// Highlighting is a display layer only. The textarea remains the source of truth.
-export function highlightSource(source: string, filename: string): string | null {
-  const language = syntaxLanguage(filename);
-  if (!language || source.length > MAX_HIGHLIGHT_CHARACTERS) return null;
+// Highlighting is a display layer only; it never changes the document text.
+export function highlightCode(source: string, language: string): string | null {
+  language = language.trim().toLowerCase();
+  if (!language || !hljs.getLanguage(language) || source.length > MAX_HIGHLIGHT_CHARACTERS) return null;
   try {
     return hljs.highlight(source, { language, ignoreIllegals: true }).value;
   } catch {
     return null;
   }
+}
+
+export function highlightSource(source: string, filename: string): string | null {
+  const language = syntaxLanguage(filename);
+  return language ? highlightCode(source, language) : null;
 }
