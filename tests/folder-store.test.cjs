@@ -132,6 +132,29 @@ test('renames and moves files and folders, preserving contents and refreshing se
   assert.equal(await fs.readFile(path.join(root, 'archive', 'notes', 'nested.txt'), 'utf8'), 'Keep me');
 });
 
+test('plans a whole file selection before moving, skipping duplicates and files already in the destination', async t => {
+  const { root, store } = await fixture(t);
+  const moves = await store.planFileMoves(['README.md', 'README.md', 'docs/design.markdown'], 'docs');
+  assert.deepEqual(moves, [{ path: 'README.md', destination: 'docs/README.md' }]);
+  assert.equal(await fs.readFile(path.join(root, 'README.md'), 'utf8'), '# Read me');
+  await assert.rejects(fs.access(path.join(root, 'docs/README.md')));
+});
+
+test('batch move preflight rejects any destination collision, duplicate name, or invalid source before changing files', async t => {
+  const { root, store } = await fixture(t);
+  await fs.writeFile(path.join(root, 'docs/README.md'), '# Existing');
+  await assert.rejects(store.planFileMoves(['package.json', 'README.md'], 'docs'), /already exists.*Nothing was moved/);
+  await fs.mkdir(path.join(root, 'archive'));
+  await assert.rejects(store.planFileMoves(['README.md', 'docs/README.md'], 'archive'), /same destination name/);
+  await assert.rejects(store.planFileMoves(['README.md', 'missing.md'], 'archive'), /ENOENT/);
+  await assert.rejects(store.planFileMoves(['README.md', 'docs'], 'archive'), /regular files/);
+  await assert.rejects(store.planFileMoves(['README.md'], '..'), /outside/);
+  await assert.rejects(store.planFileMoves([], 'archive'), /Select files/);
+  assert.equal(await fs.readFile(path.join(root, 'README.md'), 'utf8'), '# Read me');
+  assert.equal(await fs.readFile(path.join(root, 'package.json'), 'utf8'), '{}');
+  assert.deepEqual(await fs.readdir(path.join(root, 'archive')), []);
+});
+
 test('file actions reject overwrites, invalid names, root edits, and moving a folder inside itself', async t => {
   const { root, store } = await fixture(t);
   await assert.rejects(store.rename('README.md', 'package.json'), /already exists/);

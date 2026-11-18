@@ -33,7 +33,7 @@ const BlockFormula = BlockMath.extend({
 export function documentExtensions(onEditFormula?: (formula: FormulaSelection) => void) {
   const katexOptions = { throwOnError: true, trust: false };
   return [
-    StarterKit.configure({ codeBlock: false, underline: false, link: { openOnClick: true, autolink: false } }),
+    StarterKit.configure({ codeBlock: false, underline: false, link: { openOnClick: false, autolink: false, protocols: ['file'] } }),
     SlateCodeBlock, TableKit.configure({ table: { resizable: false } }),
     TaskList, SlateTaskItem,
     InlineFormula.configure({ katexOptions: { ...katexOptions, displayMode: false }, onClick: onEditFormula ? (node, pos) => onEditFormula({ kind: 'inline', latex: node.attrs.latex, pos }) : undefined }),

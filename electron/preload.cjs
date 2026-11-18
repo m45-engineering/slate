@@ -8,8 +8,10 @@ function subscribe(channel, callback) {
 
 contextBridge.exposeInMainWorld('slate', {
   platform: process.platform,
+  workspaceId: process.argv.find(argument => argument.startsWith('--slate-workspace-id='))?.split('=')[1] || 'main',
   ready: () => ipcRenderer.invoke('document:ready'),
   open: () => ipcRenderer.invoke('document:open'),
+  openLink: (href, id) => ipcRenderer.invoke('document:open-link', href, id),
   newDocument: (draft) => ipcRenderer.invoke('document:new', draft),
   save: (content, saveAs, options) => ipcRenderer.invoke('document:save', content, saveAs, options),
   exportPdf: (content, id) => ipcRenderer.invoke('document:export-pdf', content, id),
@@ -33,6 +35,7 @@ contextBridge.exposeInMainWorld('slate', {
   createEntry: (parent, name, kind) => ipcRenderer.invoke('folder:create', parent, name, kind),
   renameEntry: (path, name) => ipcRenderer.invoke('folder:rename', path, name),
   moveEntry: (path, destination) => ipcRenderer.invoke('folder:move', path, destination),
+  moveFiles: (paths, destination) => ipcRenderer.invoke('folder:move-files', paths, destination),
   importFiles: (files, destination) => ipcRenderer.invoke('folder:import', files.map(file => webUtils.getPathForFile(file)), destination),
   trashEntry: (path) => ipcRenderer.invoke('folder:trash', path),
   onFolder: (callback) => subscribe('folder:changed', callback),

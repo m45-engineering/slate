@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type OpenEntryMenu = (entry: FolderEntry, point: { x: number; y: number }) => void;
+type FileSelection = { paths: Set<string>; click(entry: FolderEntry, event: MouseEvent<HTMLButtonElement>): void; clear(): void };
 function entryMenuProps(entry: FolderEntry, onMenu: OpenEntryMenu) {
   return {
     onContextMenu: (event: MouseEvent<HTMLButtonElement>) => {
@@ -28,7 +29,7 @@ function entryMenuProps(entry: FolderEntry, onMenu: OpenEntryMenu) {
 }
 
 type EntryDrag = {
-  source: FolderEntry | null; target: string | null;
+  paths: Set<string>; target: string | null;
   start(entry: FolderEntry, event: DragEvent<HTMLElement>): void;
   end(): void;
   canDrop(destination: string): boolean;
@@ -49,16 +50,16 @@ function dropProps(destination: string, drag: EntryDrag) {
 function entryDragProps(entry: FolderEntry, drag: EntryDrag) {
   return {
     draggable: entry.kind !== 'link',
-    'data-dragging': drag.source?.path === entry.path,
+    'data-dragging': drag.paths.has(entry.path),
     onDragStart: (event: DragEvent<HTMLElement>) => drag.start(entry, event),
     onDragEnd: () => drag.end(),
     ...(entry.kind === 'directory' ? dropProps(entry.path, drag) : {}),
   };
 }
 
-function Directory({ relativePath, depth, currentPath, refreshKey, revealPath, onOpen, onMenu, drag }: {
+function Directory({ relativePath, depth, currentPath, refreshKey, revealPath, onMenu, drag, selection }: {
   relativePath: string; depth: number; currentPath: string | null; refreshKey: number; revealPath: string | null;
-  onOpen(path: string): void; onMenu: OpenEntryMenu; drag: EntryDrag;
+  onMenu: OpenEntryMenu; drag: EntryDrag; selection: FileSelection;
 }) {
   const [listing, setListing] = useState<FolderListing | null>(null);
   useEffect(() => {
@@ -73,15 +74,15 @@ function Directory({ relativePath, depth, currentPath, refreshKey, revealPath, o
   if (!listing) return <p className="tree-hint" style={{ paddingLeft: 12 + depth * 14 }}>Loading…</p>;
   if (listing.error) return <p className="tree-hint" role="status">{listing.error}</p>;
   return <SidebarMenu className="file-tree-list">
-    {listing.entries?.map(entry => <Entry key={entry.path} entry={entry} depth={depth} currentPath={currentPath} refreshKey={refreshKey} revealPath={revealPath} onOpen={onOpen} onMenu={onMenu} drag={drag} />)}
+    {listing.entries?.map(entry => <Entry key={entry.path} entry={entry} depth={depth} currentPath={currentPath} refreshKey={refreshKey} revealPath={revealPath} onMenu={onMenu} drag={drag} selection={selection} />)}
     {!listing.entries?.length && <p className="tree-hint" style={{ paddingLeft: 12 + depth * 14 }}>Empty folder</p>}
     {listing.truncated && <p className="tree-hint">Showing the first 1,500 items. Open a smaller folder to see the rest.</p>}
   </SidebarMenu>;
 }
 
-function Entry({ entry, depth, currentPath, refreshKey, revealPath, onOpen, onMenu, drag }: {
+function Entry({ entry, depth, currentPath, refreshKey, revealPath, onMenu, drag, selection }: {
   entry: FolderEntry; depth: number; currentPath: string | null; refreshKey: number; revealPath: string | null;
-  onOpen(path: string): void; onMenu: OpenEntryMenu; drag: EntryDrag;
+  onMenu: OpenEntryMenu; drag: EntryDrag; selection: FileSelection;
 }) {
   const isAncestor = Boolean(currentPath?.startsWith(entry.path + '/'));
   const [expanded, setExpanded] = useState(isAncestor);
@@ -93,11 +94,11 @@ function Entry({ entry, depth, currentPath, refreshKey, revealPath, onOpen, onMe
   }, [entry.kind, entry.path, expanded, drag.target]);
   if (entry.kind === 'directory') return <Collapsible asChild open={expanded} onOpenChange={setExpanded}>
     <SidebarMenuItem>
-      <TooltipHint content={entry.path} side="right"><CollapsibleTrigger asChild><SidebarMenuButton {...entryMenuProps(entry, onMenu)} {...entryDragProps(entry, drag)} className="file-tree-item" style={{ paddingLeft: 12 + depth * 14 }}>
+      <TooltipHint content={entry.path} side="right"><CollapsibleTrigger asChild><SidebarMenuButton {...entryMenuProps(entry, onMenu)} {...entryDragProps(entry, drag)} onClick={selection.clear} className="file-tree-item" style={{ paddingLeft: 12 + depth * 14 }}>
         <ChevronRight className={expanded ? 'tree-chevron expanded' : 'tree-chevron'} />
         {expanded ? <FolderOpen /> : <Folder />}<span>{entry.name}</span>
       </SidebarMenuButton></CollapsibleTrigger></TooltipHint>
-      <CollapsibleContent><Directory relativePath={entry.path} depth={depth + 1} currentPath={currentPath} refreshKey={refreshKey} revealPath={revealPath} onOpen={onOpen} onMenu={onMenu} drag={drag} /></CollapsibleContent>
+      <CollapsibleContent><Directory relativePath={entry.path} depth={depth + 1} currentPath={currentPath} refreshKey={refreshKey} revealPath={revealPath} onMenu={onMenu} drag={drag} selection={selection} /></CollapsibleContent>
     </SidebarMenuItem>
   </Collapsible>;
   return <SidebarMenuItem><TooltipHint content={entry.editable ? entry.path : `${entry.path} · ${entry.kind === 'link' ? 'symbolic link' : 'binary or unsupported file type'}`} side="right"><SidebarMenuButton
@@ -108,7 +109,10 @@ function Entry({ entry, depth, currentPath, refreshKey, revealPath, onOpen, onMe
     isActive={currentPath === entry.path}
     aria-current={currentPath === entry.path ? 'page' : undefined}
     aria-disabled={!entry.editable}
-    onClick={() => { if (entry.editable) onOpen(entry.path); }}
+    data-file-path={entry.kind === 'file' ? entry.path : undefined}
+    data-selected={selection.paths.has(entry.path)}
+    aria-pressed={entry.kind === 'file' ? selection.paths.has(entry.path) : undefined}
+    onClick={event => { if (entry.kind === 'file') selection.click(entry, event); }}
   >{entry.editable ? <FileText /> : <File />}<span>{entry.name}</span></SidebarMenuButton></TooltipHint></SidebarMenuItem>;
 }
 
@@ -119,17 +123,49 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
   const [tab, setTab] = useState('files');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<FolderSearch | null>(null);
+  const sidebar = useRef<HTMLDivElement>(null);
+  const [selected, setSelected] = useState(new Set<string>());
+  const selectionAnchor = useRef<string | null>(null);
   const searchRefresh = useRef(-1);
-  const [menu, setMenu] = useState<{ entry: FolderEntry; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ entry: FolderEntry; paths: string[]; x: number; y: number } | null>(null);
   const [action, setAction] = useState<{ type: 'rename' | 'delete' | 'new-file' | 'new-folder'; entry: FolderEntry } | null>(null);
   const [name, setName] = useState('');
   const [revealPath, setRevealPath] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
-  const [dragSource, setDragSource] = useState<FolderEntry | null>(null);
   const dragSourceRef = useRef<FolderEntry | null>(null);
+  const dragPathsRef = useRef<string[]>([]);
+  const [dragPaths, setDragPaths] = useState(new Set<string>());
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
-  const openMenu: OpenEntryMenu = (entry, point) => setMenu({ entry, ...point });
+  function clearSelection() { setSelected(new Set()); selectionAnchor.current = null; }
+  const selection: FileSelection = {
+    paths: selected, clear: clearSelection,
+    click(entry, event) {
+      const additive = event.metaKey || event.ctrlKey;
+      if (event.shiftKey || additive) event.preventDefault();
+      const next = additive ? new Set(selected) : new Set<string>();
+      if (event.shiftKey && selectionAnchor.current) {
+        const visible = Array.from(sidebar.current?.querySelectorAll<HTMLElement>('[data-file-path]') ?? [])
+          .filter(item => item.offsetParent !== null).map(item => item.dataset.filePath!);
+        const start = visible.indexOf(selectionAnchor.current);
+        const end = visible.indexOf(entry.path);
+        if (start >= 0 && end >= 0) for (const path of visible.slice(Math.min(start, end), Math.max(start, end) + 1)) next.add(path);
+        else next.add(entry.path);
+      } else {
+        if (additive && next.has(entry.path)) next.delete(entry.path);
+        else next.add(entry.path);
+        selectionAnchor.current = entry.path;
+      }
+      setSelected(next);
+      if (!event.shiftKey && !additive && entry.editable) void openFile(entry.path);
+    },
+  };
+  const openMenu: OpenEntryMenu = (entry, point) => {
+    const paths = entry.kind === 'file' && selected.has(entry.path) ? [...selected] : [entry.path];
+    if (entry.kind === 'file' && !selected.has(entry.path)) setSelected(new Set(paths));
+    else if (entry.kind !== 'file') clearSelection();
+    setMenu({ entry, paths, ...point });
+  };
   const beginAction = (type: 'rename' | 'delete', entry: FolderEntry) => { setAction({ type, entry }); setName(entry.name); setActionError(''); };
 
   const beginCreate = (type: 'new-file' | 'new-folder', parent?: FolderEntry) => {
@@ -143,6 +179,7 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
       const result = await window.slate?.moveEntry(entry.path, destination);
       if (result?.error) onError(result.error);
       if (result?.changed) {
+        clearSelection();
         setRefreshKey(value => value + 1);
         if (destination !== undefined) {
           setQuery('');
@@ -150,6 +187,19 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
         }
       }
     } catch (error) { onError(error instanceof Error ? error.message : 'The item could not be moved.'); }
+  }
+
+  async function moveFiles(paths: string[], destination?: string) {
+    try {
+      const result = await window.slate?.moveFiles(paths, destination);
+      if (result?.error) onError(result.error);
+      if (result?.changed) {
+        setSelected(new Set(result.paths));
+        selectionAnchor.current = result.paths?.[0] ?? null;
+        setQuery(''); setRevealPath(result.paths?.[0] ?? null);
+        setRefreshKey(value => value + 1);
+      }
+    } catch (error) { onError(error instanceof Error ? error.message : 'The files could not be moved.'); }
   }
 
   async function importFiles(files: File[], destination: string) {
@@ -167,22 +217,30 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
   function canDrop(destination: string) {
     const source = dragSourceRef.current;
     if (!source || source.kind === 'link') return false;
-    const parent = source.path.includes('/') ? source.path.slice(0, source.path.lastIndexOf('/')) : '';
-    return destination !== parent && destination !== source.path && !destination.startsWith(source.path + '/');
+    const paths = dragPathsRef.current;
+    return paths.some(path => destination !== (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''))
+      && paths.every(path => destination !== path && !destination.startsWith(path + '/'));
   }
 
   function endDrag() {
     dragSourceRef.current = null;
-    setDragSource(null); setDropTarget(null);
+    dragPathsRef.current = [];
+    setDragPaths(new Set());
+    setDropTarget(null);
   }
 
   const drag: EntryDrag = {
-    source: dragSource, target: dropTarget, canDrop,
+    paths: dragPaths, target: dropTarget, canDrop,
     start(entry, event) {
       event.stopPropagation();
       if (entry.kind === 'link') { event.preventDefault(); return; }
       dragSourceRef.current = entry;
-      setDragSource(entry); setMenu(null);
+      const paths = entry.kind === 'file' && selected.has(entry.path) ? [...selected] : [entry.path];
+      if (entry.kind === 'file') setSelected(new Set(paths));
+      else clearSelection();
+      dragPathsRef.current = paths;
+      setDragPaths(new Set(paths));
+      setMenu(null);
       event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.setData('application/x-slate-workspace-entry', entry.path);
     },
@@ -206,10 +264,14 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
     drop(destination, event) {
       event.preventDefault(); event.stopPropagation();
       const source = dragSourceRef.current;
+      const paths = dragPathsRef.current;
       const allowed = canDrop(destination);
       const files = Array.from(event.dataTransfer.files);
       endDrag();
-      if (source && allowed) void move(source, destination);
+      if (source && allowed) {
+        if (paths.length > 1) void moveFiles(paths, destination);
+        else void move(source, destination);
+      }
       else if (!source && files.length) void importFiles(files, destination);
     },
   };
@@ -243,6 +305,7 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
   }
   useEffect(() => {
     endDrag();
+    clearSelection();
     setTab('files'); setQuery(''); setRevealPath(null); setRefreshKey(value => value + 1);
   }, [folder?.path]);
   useEffect(() => {
@@ -277,7 +340,7 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
   const actionTitle = action?.type === 'new-file' ? 'New File' : action?.type === 'new-folder' ? 'New Folder' : action?.type === 'rename' ? 'Rename' : 'Move to Trash?';
   const creating = action?.type === 'new-file' || action?.type === 'new-folder';
 
-  return <Sidebar collapsible="none" className="folder-sidebar" aria-label="Workspace sidebar">
+  return <Sidebar ref={sidebar} collapsible="none" className="folder-sidebar" aria-label="Workspace sidebar" onKeyDown={event => { if (event.key === 'Escape') clearSelection(); }}>
     <Tabs value={tab} onValueChange={setTab} className="sidebar-tabs">
       <SidebarHeader className="folder-sidebar-header"><TabsList className="sidebar-tab-list"><TabsTrigger value="files">Files</TabsTrigger><TabsTrigger value="outline">Outline</TabsTrigger></TabsList></SidebarHeader>
       <SidebarContent className="folder-sidebar-content">
@@ -289,15 +352,16 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
                 <TooltipHint content="New folder" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="New folder" onClick={() => beginCreate('new-folder')}><FolderPlus /></Button></TooltipHint>
                 <TooltipHint content="Refresh folder" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="Refresh folder" onClick={() => setRefreshKey(value => value + 1)}><RefreshCw /></Button></TooltipHint>
               </div></div>
-              <div className="file-search"><Search size={14} /><Input aria-label="Find file by name" placeholder="Find a file…" value={query} maxLength={200} onChange={event => setQuery(event.target.value)} />{query && <Button variant="ghost" size="icon" className="clear-search" aria-label="Clear file search" onClick={() => setQuery('')}><X size={13} /></Button>}</div>
+              <div className="file-search"><Search size={14} /><Input aria-label="Find file by name" placeholder="Find a file…" value={query} maxLength={200} onChange={event => { clearSelection(); setQuery(event.target.value); }} />{query && <Button variant="ghost" size="icon" className="clear-search" aria-label="Clear file search" onClick={() => { clearSelection(); setQuery(''); }}><X size={13} /></Button>}</div>
+              {selected.size > 1 && <div className="file-selection"><span role="status">{selected.size} files selected</span><Button variant="ghost" size="sm" aria-label="Move selected files" onClick={() => void moveFiles([...selected])}>Move…</Button></div>}
             </div>
             {query.trim() ? <div aria-live="polite" className="file-search-results">
               {!results ? <p className="tree-hint">Searching…</p> : results.error ? <p className="tree-hint">{results.error}</p> : <>
                 <p className="tree-hint search-count">{results.total ? `${results.total} ${results.total === 1 ? 'file' : 'files'}${results.total > 100 ? ' · showing first 100' : ''}` : 'No matching files'}</p>
-                <SidebarMenu>{results.entries?.map(entry => <SidebarMenuItem key={entry.path}><TooltipHint content={entry.path} side="right"><SidebarMenuButton {...entryMenuProps(entry, openMenu)} {...entryDragProps(entry, drag)} className="file-search-result" isActive={currentPath === entry.path} onClick={() => void openFile(entry.path)}><FileText /><span><span>{entry.name}</span><small>{entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : folder.name}</small></span></SidebarMenuButton></TooltipHint></SidebarMenuItem>)}</SidebarMenu>
+                <SidebarMenu>{results.entries?.map(entry => <SidebarMenuItem key={entry.path}><TooltipHint content={entry.path} side="right"><SidebarMenuButton {...entryMenuProps(entry, openMenu)} {...entryDragProps(entry, drag)} data-file-path={entry.path} data-selected={selected.has(entry.path)} aria-pressed={selected.has(entry.path)} className="file-search-result" isActive={currentPath === entry.path} onClick={event => selection.click(entry, event)}><FileText /><span><span>{entry.name}</span><small>{entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : folder.name}</small></span></SidebarMenuButton></TooltipHint></SidebarMenuItem>)}</SidebarMenu>
                 {Boolean(results.unreadableFolders) && <p className="tree-hint">Some folders could not be read and were skipped.</p>}
               </>}
-            </div> : <Directory key={folder.path} relativePath="" depth={0} currentPath={currentPath} refreshKey={refreshKey} revealPath={revealPath} onOpen={path => void openFile(path)} onMenu={openMenu} drag={drag} />}
+            </div> : <Directory key={folder.path} relativePath="" depth={0} currentPath={currentPath} refreshKey={refreshKey} revealPath={revealPath} onMenu={openMenu} drag={drag} selection={selection} />}
           </> : <div className="folder-empty"><FolderOpen size={24} strokeWidth={1.3} /><p>Your files, in context.</p><span>Open a local folder to browse its Markdown, text, and code files.</span><Button variant="secondary" onClick={onOpenFolder}>Open folder</Button></div>}
         </TabsContent>
         <TabsContent value="outline" className="outline-tab">{outline}</TabsContent>
@@ -311,10 +375,12 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
           <DropdownMenuItem onSelect={() => beginCreate('new-folder', menu.entry)}>New Folder…</DropdownMenuItem>
           <DropdownMenuSeparator />
         </>}
-        <DropdownMenuItem onSelect={() => { if (menu) beginAction('rename', menu.entry); }}>Rename…</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => { if (menu) void move(menu.entry); }}>Move…</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => { if (menu) beginAction('delete', menu.entry); }}>Delete…</DropdownMenuItem>
+        {menu && menu.paths.length > 1 ? <DropdownMenuItem onSelect={() => void moveFiles(menu.paths)}>Move {menu.paths.length} files…</DropdownMenuItem> : <>
+          <DropdownMenuItem onSelect={() => { if (menu) beginAction('rename', menu.entry); }}>Rename…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => { if (menu) void move(menu.entry); }}>Move…</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => { if (menu) beginAction('delete', menu.entry); }}>Delete…</DropdownMenuItem>
+        </>}
       </DropdownMenuContent>
     </DropdownMenu>
     <Dialog open={Boolean(action)} onOpenChange={open => { if (!open && !working) setAction(null); }}>

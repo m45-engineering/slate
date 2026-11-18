@@ -78,6 +78,28 @@ async function openSidebarFile(name: string) {
   await expect(tab).toHaveAttribute('aria-selected', 'true');
 }
 
+async function openNewWindow() {
+  const opened = application.waitForEvent('window');
+  await application.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('new-window')!.click());
+  const next = await opened;
+  next.on('pageerror', error => rendererErrors.push(error.message));
+  const native = await application.browserWindow(next);
+  await native.evaluate(window => {
+    window.setContentSize(1120, 800);
+    window.webContents.setBackgroundThrottling(false);
+    window.hide(); window.show = () => {}; window.focus = () => {};
+  });
+  await expect(next.getByRole('textbox', { name: 'Document editor', exact: true })).toBeVisible();
+  return next;
+}
+
+async function openFolderIn(window: Page, folder: string) {
+  await application.evaluate(({ dialog }, folderPath) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folderPath] });
+  }, folder);
+  await window.evaluate(() => window.slate!.openFolder());
+}
+
 async function dropNativeFiles(target: Locator, files: string[]) {
   const bounds = (await target.boundingBox())!;
   const session = await page.context().newCDPSession(page);
@@ -144,6 +166,161 @@ test('runs as an isolated desktop app with a live Mermaid preview', async () => 
   await expect(page.getByRole('button', { name: 'sample.md', exact: true })).toHaveAttribute('aria-current', 'page');
   expect(await page.evaluate(() => typeof (window as unknown as { require?: unknown }).require)).toBe('undefined');
   await page.screenshot({ path: 'tmp/slate-desktop.png' });
+});
+
+test('new windows keep folders, drafts, saves, and menu commands independent', async () => {
+  const otherFolder = path.join(directory, 'other-repo');
+  await mkdir(otherFolder);
+  const otherFile = path.join(otherFolder, 'sample.md');
+  await writeFile(otherFile, '# Other repository\n');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill('# First window draft\n');
+  const firstId = (await page.evaluate(() => window.slate!.ready())).activeId;
+  const second = await openNewWindow();
+  await expect(second.getByText(/An unsaved draft is available/)).toHaveCount(0);
+  await openFolderIn(second, otherFolder);
+  await second.evaluate(() => window.slate!.openFile('sample.md'));
+  await expect(second.getByRole('heading', { name: 'Other repository' })).toBeVisible();
+  expect((await page.evaluate(() => window.slate!.folderReady()))?.path).toBe(await realpath(directory));
+  expect((await second.evaluate(() => window.slate!.folderReady()))?.path).toBe(await realpath(otherFolder));
+  expect(await second.evaluate(id => window.slate!.save('wrong window', false, { id, path: null }), firstId)).toEqual({ canceled: true });
+  await second.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await second.getByRole('textbox', { name: 'Markdown source' }).fill('# Second window saved\n');
+  await expect(second.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  const secondNative = await application.browserWindow(second);
+  await secondNative.evaluate(window => { window.emit('focus'); });
+  await application.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('save-document')!.click());
+  await expect.poll(() => readFile(otherFile, 'utf8')).toBe('# Second window saved\n');
+  expect(await readFile(file, 'utf8')).toBe(original);
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# First window draft\n');
+  const firstNative = await application.browserWindow(page);
+  await firstNative.evaluate(window => { window.emit('focus'); });
+  await application.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('save-document')!.click());
+  await expect.poll(() => readFile(file, 'utf8')).toBe('# First window draft\n');
+  await expect(second.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Second window saved\n');
+});
+
+test('closing a window confirms only its own drafts and leaves the other window usable', async () => {
+  const second = await openNewWindow();
+  await second.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await second.getByRole('textbox', { name: 'Markdown source' }).fill('# Keep this second-window draft\n');
+  const native = await application.browserWindow(second);
+  await native.evaluate(window => window.close());
+  const confirmation = second.getByRole('dialog', { name: 'Save changes?' });
+  await expect(confirmation).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(second.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Keep this second-window draft\n');
+  await native.evaluate(window => window.close());
+  const closed = second.waitForEvent('close');
+  await confirmation.getByRole('button', { name: 'Discard', exact: true }).click();
+  await closed;
+  expect(application.windows()).toHaveLength(1);
+  await expect(page.getByRole('heading', { name: 'A real document', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Still usable\n');
+  await saveWithShortcut(file, '# Still usable\n');
+});
+
+test('quitting multiple windows saves each only after its own confirmation', async () => {
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill('# First saved on quit\n');
+  const second = await openNewWindow();
+  await second.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await second.getByRole('textbox', { name: 'Markdown source' }).fill('# Second saved on quit\n');
+  await application.evaluate(({ app }) => app.quit());
+  await page.getByRole('dialog', { name: 'Save changes?' }).getByRole('button', { name: 'Save', exact: true }).click();
+  const prompt = second.getByRole('dialog', { name: 'Save changes?' });
+  await prompt.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(await readFile(file, 'utf8')).toBe('# First saved on quit\n');
+  await expect(second.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Second saved on quit\n');
+  expect(application.windows()).toHaveLength(2);
+  const secondPath = path.join(directory, 'second-on-quit.md');
+  await application.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, secondPath);
+  await application.evaluate(({ app }) => app.quit());
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const closed = application.waitForEvent('close');
+  await prompt.getByRole('button', { name: 'Save', exact: true }).click();
+  await closed;
+  expect(await readFile(secondPath, 'utf8')).toBe('# Second saved on quit\n');
+});
+
+test('two windows can export PDFs concurrently without exchanging their contents', async () => {
+  const second = await openNewWindow();
+  const firstNative = await application.browserWindow(page);
+  const firstId = await firstNative.evaluate(window => window.id);
+  const outputs = { firstId, first: path.join(directory, 'first.pdf'), second: path.join(directory, 'second.pdf') };
+  await application.evaluate(({ dialog }, paths) => {
+    dialog.showSaveDialog = async parent => ({ canceled: false, filePath: parent.id === paths.firstId ? paths.first : paths.second });
+  }, outputs);
+  const results = await Promise.all([
+    page.evaluate(async () => window.slate!.exportPdf('# First\n\n[First](https://first.example/)\n', (await window.slate!.ready()).activeId)),
+    second.evaluate(async () => window.slate!.exportPdf('# Second\n\n[Second](https://second.example/)\n', (await window.slate!.ready()).activeId)),
+  ]);
+  expect(results).toEqual([{ path: outputs.first }, { path: outputs.second }]);
+  const firstPdf = (await readFile(outputs.first)).toString('latin1');
+  const secondPdf = (await readFile(outputs.second)).toString('latin1');
+  expect(firstPdf).toContain('https://first.example/');
+  expect(firstPdf).not.toContain('https://second.example/');
+  expect(secondPdf).toContain('https://second.example/');
+  expect(secondPdf).not.toContain('https://first.example/');
+});
+
+test('quit checks again if an already-confirmed window is edited while another prompt is open', async () => {
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  await source.fill('# First saved version\n');
+  const second = await openNewWindow();
+  await second.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await second.getByRole('textbox', { name: 'Markdown source' }).fill('# Second draft\n');
+  await application.evaluate(({ app }) => app.quit());
+  const firstPrompt = page.getByRole('dialog', { name: 'Save changes?' });
+  await firstPrompt.getByRole('button', { name: 'Save', exact: true }).click();
+  const secondPrompt = second.getByRole('dialog', { name: 'Save changes?' });
+  await expect(secondPrompt).toBeVisible();
+  await source.fill('# New edit during quit\n');
+  await secondPrompt.getByRole('button', { name: 'Discard', exact: true }).click();
+  await expect(firstPrompt).toBeVisible();
+  await firstPrompt.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(source).toHaveValue('# New edit during quit\n');
+  expect(await readFile(file, 'utf8')).toBe('# First saved version\n');
+  expect(application.windows()).toHaveLength(2);
+});
+
+test('restart restores both window workspaces and keeps crash-recovery drafts separate', async () => {
+  const second = await openNewWindow();
+  const otherFolder = path.join(directory, 'other-repo');
+  await mkdir(otherFolder);
+  await writeFile(path.join(otherFolder, 'other.md'), '# Other repository\n');
+  await openFolderIn(second, otherFolder);
+  await second.evaluate(() => window.slate!.openFile('other.md'));
+  const firstWindowId = await page.evaluate(() => window.slate!.workspaceId);
+  const secondWindowId = await second.evaluate(() => window.slate!.workspaceId);
+  expect(firstWindowId).not.toBe(secondWindowId);
+  for (const [window, text] of [[page, '# First recovery\n'], [second, '# Second recovery\n']] as const) {
+    await window.getByRole('tab', { name: 'Markdown', exact: true }).click();
+    await window.getByRole('textbox', { name: 'Markdown source' }).fill(text);
+    await expect.poll(() => window.evaluate(() => {
+      const id = window.slate!.workspaceId;
+      return JSON.parse(localStorage.getItem(`slate-unsaved-drafts-v2${id === 'main' ? '' : '-' + id}`) || '[]').map((draft: { content: string }) => draft.content);
+    })).toEqual([text]);
+  }
+  await application.evaluate(({ session }) => { session.defaultSession.flushStorageData(); });
+  const exited = application.waitForEvent('close');
+  await application.evaluate(({ app }) => { setTimeout(() => app.exit(0), 50); });
+  await exited;
+  await launch();
+  await expect.poll(() => application.windows().length).toBe(2);
+  const restored = application.windows();
+  for (const window of restored) {
+    await window.evaluate(() => window.slate!.ready());
+    const id = await window.evaluate(() => window.slate!.workspaceId);
+    expect([firstWindowId, secondWindowId]).toContain(id);
+    await expect(window.getByText(/An unsaved draft is available/)).toBeVisible();
+    await window.getByRole('button', { name: 'Recover as new document', exact: true }).click();
+    await expect(window.getByRole('heading', { name: id === firstWindowId ? 'First recovery' : 'Second recovery', exact: true })).toBeVisible();
+    expect((await window.evaluate(() => window.slate!.folderReady()))?.path).toBe(await realpath(id === firstWindowId ? directory : otherFolder));
+  }
 });
 
 test('Mermaid supports pointer-centered zoom, dragging, and fit without editing the document', async () => {
@@ -296,9 +473,10 @@ test('footer contains company and repository links without document statistics',
   await expect(website).toHaveAttribute('href', 'https://www.m45.engineering/');
   await expect(github).toHaveAttribute('href', 'https://github.com/m45-engineering/slate');
   await expect(github.locator('img')).toHaveJSProperty('naturalWidth', 16);
-  await application.evaluate(({ shell }) => {
+  await application.evaluate(({ shell, dialog }) => {
     Reflect.set(globalThis, 'footerLinksOpened', []);
     shell.openExternal = async url => { Reflect.get(globalThis, 'footerLinksOpened').push(url); };
+    dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
   });
   const editorUrl = page.url();
   await website.click();
@@ -320,26 +498,139 @@ test('Save stays disabled and view changes leave an unchanged file untouched', a
   expect(await readFile(file, 'utf8')).toBe(original);
 });
 
-test('web links are blue and open the default browser without navigating the editor', async () => {
+test('web links preview their URL and require confirmation before opening the default browser', async () => {
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   const markdown = '# Links\n\n[Secure site](https://example.com/docs) and [HTTP site](http://example.com/help).\n';
   await page.getByRole('textbox', { name: 'Markdown source' }).fill(markdown);
   await page.getByRole('tab', { name: 'Visual', exact: true }).click();
-  await application.evaluate(({ shell }) => {
+  await application.evaluate(({ shell, dialog }) => {
     Reflect.set(globalThis, 'documentLinksOpened', []);
+    Reflect.set(globalThis, 'linkPrompts', []);
+    Reflect.set(globalThis, 'linkResponse', 0);
     shell.openExternal = async url => { Reflect.get(globalThis, 'documentLinksOpened').push(url); };
+    dialog.showMessageBox = async (_window, options) => {
+      Reflect.get(globalThis, 'linkPrompts').push(options);
+      return { response: Reflect.get(globalThis, 'linkResponse'), checkboxChecked: false };
+    };
   });
   const editorUrl = page.url();
+  const secure = page.getByRole('link', { name: 'Secure site', exact: true });
+  await secure.hover();
+  await expect(page.getByLabel('Link destination')).toHaveText('https://example.com/docs');
+  await secure.click();
+  await expect.poll(() => application.evaluate(() => Reflect.get(globalThis, 'linkPrompts').length)).toBe(1);
+  expect(await application.evaluate(() => Reflect.get(globalThis, 'documentLinksOpened'))).toEqual([]);
+  expect(await application.evaluate(() => Reflect.get(globalThis, 'linkPrompts')[0])).toMatchObject({
+    detail: 'https://example.com/docs\n\nOnly open links you trust.', defaultId: 0, cancelId: 0,
+  });
+  await application.evaluate(() => Reflect.set(globalThis, 'linkResponse', 1));
   for (const name of ['Secure site', 'HTTP site']) {
     const link = page.getByRole('link', { name, exact: true });
     await expect(link).toHaveCSS('color', 'rgb(29, 78, 216)');
     await link.click();
   }
   await expect.poll(() => application.evaluate(() => Reflect.get(globalThis, 'documentLinksOpened'))).toEqual(['https://example.com/docs', 'http://example.com/help']);
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).hover();
+  await expect(page.getByLabel('Link destination')).toHaveCount(0);
   expect(page.url()).toBe(editorUrl);
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(markdown);
   expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('document links resolve from the current document and preserve open drafts', async () => {
+  await mkdir(path.join(directory, 'docs'));
+  const target = path.join(directory, 'docs', 'linked note.md');
+  await writeFile(target, '# Linked note\n\n[Back](../sample.md)\n');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const markdown = '# Unsaved links\n\n[Local note](docs/linked%20note.md)\n\n[Missing](missing.md)\n';
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill(markdown);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  const local = page.getByRole('link', { name: 'Local note', exact: true });
+  await local.hover();
+  await expect(page.getByLabel('Link destination')).toHaveText('docs/linked%20note.md');
+  await local.click();
+  await expect(page.getByRole('heading', { name: 'Linked note', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('link', { name: 'Back', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Unsaved links', exact: true })).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Open documents' }).getByRole('tab')).toHaveCount(2);
+  await page.getByRole('link', { name: 'Missing', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('ENOENT');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(markdown);
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('heading links scroll within an unsaved document, including duplicate and Unicode headings', async () => {
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const filler = Array.from({ length: 24 }, (_, i) => `Paragraph ${i}.\n\n`).join('');
+  const markdown = `[Duplicate](#repeat-1) [Unicode](#caf%C3%A9) [Missing](#absent)\n\n## Repeat\n\n${filler}## Repeat\n\n${filler}## Café\n\n${filler}`;
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill(markdown);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  const editorUrl = page.url();
+  const expectAtHeading = async (heading: Locator) => {
+    await expect.poll(async () => {
+      const target = (await heading.boundingBox())!;
+      const viewport = (await page.locator('.document-scroll').boundingBox())!;
+      return Math.abs(target.y - viewport.y - 35);
+    }).toBeLessThan(3);
+  };
+  await page.getByRole('link', { name: 'Duplicate', exact: true }).click();
+  await expectAtHeading(page.getByRole('heading', { name: 'Repeat', exact: true }).nth(1));
+  await page.getByRole('link', { name: 'Unicode', exact: true }).click();
+  await expectAtHeading(page.getByRole('heading', { name: 'Café', exact: true }));
+  await page.getByRole('link', { name: 'Missing', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Heading not found: #absent');
+  expect(page.url()).toBe(editorUrl);
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(markdown);
+});
+
+test('heading links open another document and scroll after its content is rendered', async () => {
+  const filler = Array.from({ length: 24 }, (_, i) => `Paragraph ${i}.\n\n`).join('');
+  const target = `# Other document\n\n${filler}## Install **here**!\n\n${filler}`;
+  await writeFile(path.join(directory, 'target.md'), target);
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const markdown = '# Original draft\n\n[Install](target.md#install-here)\n';
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill(markdown);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await page.getByRole('link', { name: 'Install', exact: true }).click();
+  const heading = page.getByRole('heading', { name: 'Install here!', exact: true });
+  await expect.poll(async () => {
+    const target = await heading.boundingBox();
+    const viewport = (await page.locator('.document-scroll').boundingBox())!;
+    return target ? Math.abs(target.y - viewport.y - 35) : Infinity;
+  }).toBeLessThan(3);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await page.evaluate(() => window.slate!.openFile('sample.md'));
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(markdown);
+  expect(await readFile(path.join(directory, 'target.md'), 'utf8')).toBe(target);
+});
+
+test('heading links retain the target tab draft and Markdown view, recognizing setext headings outside code', async () => {
+  const filler = Array.from({ length: 40 }, (_, i) => `Paragraph ${i}.\n\n`).join('');
+  const target = `# Other document\n\n\`\`\`md\n## Install here\n\`\`\`\n\n${filler}Install *here*\n-------------\n\n${filler}`;
+  await writeFile(path.join(directory, 'target.md'), target);
+  await page.evaluate(() => window.slate!.openFile('target.md'));
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const draft = target + '\nUnsaved target draft.\n';
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill(draft);
+  await page.evaluate(() => window.slate!.openFile('sample.md'));
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill('[Install](target.md#install-here)\n');
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await page.getByRole('link', { name: 'Install', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  await expect(source).toHaveValue(draft);
+  await expect(source).toBeFocused();
+  await expect.poll(() => source.evaluate((input: HTMLTextAreaElement) => input.selectionStart)).toBe(draft.indexOf('Install *here*'));
+  await expect.poll(() => page.locator('.document-scroll').evaluate(element => element.scrollTop)).toBeGreaterThan(1000);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  expect(await readFile(path.join(directory, 'target.md'), 'utf8')).toBe(target);
 });
 
 test('shell variables inside inline code remain available in Visual view', async () => {
@@ -1718,6 +2009,87 @@ test('dragging a file into a folder and back to the root preserves its open draf
   await expect.poll(() => readFile(file, 'utf8').catch(() => null)).toBe('# Dragged draft\n');
   await expect(readFile(path.join(archive, 'sample.md'), 'utf8')).rejects.toThrow();
   await expect(page.getByRole('button', { name: 'sample.md', exact: true })).toHaveAttribute('aria-current', 'page');
+});
+
+test('selected files drag together and keep their open drafts associated with the new paths', async () => {
+  const archive = path.join(directory, 'archive');
+  await mkdir(archive);
+  await writeFile(path.join(directory, 'second.md'), '# Second\n');
+  await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Unsaved group move\n');
+  await page.getByRole('button', { name: 'sample.md', exact: true }).click();
+  await page.getByRole('button', { name: 'second.md', exact: true }).click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] });
+  await expect(page.getByText('2 files selected', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'second.md', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Unsaved group move\n');
+  await page.getByRole('button', { name: 'sample.md', exact: true }).dragTo(page.getByRole('button', { name: 'archive', exact: true }));
+  await expect.poll(() => readFile(path.join(archive, 'second.md'), 'utf8').catch(() => null)).toBe('# Second\n');
+  await expectActiveFileInFolder('sample.md', 'archive');
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Unsaved group move\n');
+  await saveWithShortcut(path.join(archive, 'sample.md'), '# Unsaved group move\n');
+  await expect(readFile(file, 'utf8')).rejects.toThrow();
+  await expect(readFile(path.join(directory, 'second.md'), 'utf8')).rejects.toThrow();
+});
+
+test('Shift selects a visible range and the context menu moves the selected files', async () => {
+  const archive = path.join(directory, 'archive');
+  await mkdir(archive);
+  for (const name of ['a.md', 'b.md', 'c.md']) await writeFile(path.join(directory, name), `# ${name}\n`);
+  await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
+  await openSidebarFile('a.md');
+  await page.getByRole('button', { name: 'c.md', exact: true }).click({ modifiers: ['Shift'] });
+  await expect(page.getByText('3 files selected', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'b.md', exact: true }).click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] });
+  await expect(page.getByText('2 files selected', { exact: true })).toBeVisible();
+  await application.evaluate(({ dialog }, destination) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [destination] }); }, archive);
+  await page.getByRole('button', { name: 'c.md', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Move 2 files…', exact: true }).click();
+  await expect.poll(() => readFile(path.join(archive, 'c.md'), 'utf8').catch(() => null)).toBe('# c.md\n');
+  expect(await readFile(path.join(archive, 'a.md'), 'utf8')).toBe('# a.md\n');
+  expect(await readFile(path.join(directory, 'b.md'), 'utf8')).toBe('# b.md\n');
+  await expect(page.getByRole('button', { name: 'a.md', exact: true })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('search-result selection refuses duplicate destination names without moving either file', async () => {
+  const archive = path.join(directory, 'archive');
+  await mkdir(archive);
+  for (const folder of ['one', 'two']) {
+    await mkdir(path.join(directory, folder));
+    await writeFile(path.join(directory, folder, 'match.md'), `# ${folder}\n`);
+  }
+  await page.getByRole('textbox', { name: 'Find file by name' }).fill('match.md');
+  const matches = page.locator('.file-search-result');
+  await expect(matches).toHaveCount(2);
+  await matches.nth(0).click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] });
+  await matches.nth(1).click({ modifiers: ['Shift'] });
+  await expect(page.getByText('2 files selected', { exact: true })).toBeVisible();
+  await application.evaluate(({ dialog }, destination) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [destination] }); }, archive);
+  await page.getByRole('button', { name: 'Move selected files', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'same destination name' })).toBeVisible();
+  expect(await readFile(path.join(directory, 'one/match.md'), 'utf8')).toBe('# one\n');
+  expect(await readFile(path.join(directory, 'two/match.md'), 'utf8')).toBe('# two\n');
+  await expect(readFile(path.join(archive, 'match.md'), 'utf8')).rejects.toThrow();
+});
+
+test('a later batch-move failure reports partial progress and preserves the moved tab draft', async () => {
+  await mkdir(path.join(directory, 'archive'));
+  await writeFile(path.join(directory, 'later.md'), '# Later\n');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Preserve my moved draft\n');
+  await application.evaluate(() => {
+    const fs = process.getBuiltinModule('fs/promises');
+    const rename = fs.rename;
+    fs.rename = async (...args) => {
+      if (process.getBuiltinModule('path').basename(String(args[0])) === 'later.md') throw new Error('Simulated move failure');
+      return rename(...args);
+    };
+  });
+  const result = await page.evaluate(() => window.slate!.moveFiles(['sample.md', 'later.md'], 'archive'));
+  expect(result).toMatchObject({ changed: true, paths: ['archive/sample.md'], error: 'Moved 1 of 2 files. Simulated move failure' });
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Preserve my moved draft\n');
+  await saveWithShortcut(path.join(directory, 'archive/sample.md'), '# Preserve my moved draft\n');
+  expect(await readFile(path.join(directory, 'later.md'), 'utf8')).toBe('# Later\n');
 });
 
 test('native file drops copy multiple files into a folder and root without changing open drafts', async () => {

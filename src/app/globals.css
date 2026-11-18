@@ -90,6 +90,8 @@ button svg { flex-shrink: 0; }
 .file-tree-item::before { display: none; }
 .file-tree-item svg { width: 14px; height: 14px; stroke-width: 1.75; }
 .file-tree-item[data-active='true'] { background: var(--ui-hover); }
+.file-tree-item[data-selected='true'], .file-search-result[data-selected='true'] { background: #e8efff; }
+.file-selection { display: flex; align-items: center; justify-content: space-between; padding: 0 12px 8px; font-size: 12px; }
 .file-tree-item .tree-chevron { width: 11px; height: 11px; }
 .tree-chevron.expanded { transform: rotate(90deg); }
 .file-tree-item.context-file { color: var(--ui-muted); cursor: default; opacity: 1; pointer-events: auto; }
@@ -213,6 +215,7 @@ body:has(.desktop-mac) .diagram-dialog { top: 62px; height: calc(100dvh - 86px);
 .link-popover input { flex: 1; min-width: 100px; }
 .source-paper { max-width: 1100px; padding: 28px 40px 0 15px; }
 .source-editor { display: flex; gap: 22px; font: 13px/26px var(--font-geist-mono), monospace; }
+.code-paper .source-editor { font-size: 12px; }
 .line-numbers { min-width: 31px; text-align: right; color: var(--ui-muted); user-select: none; }
 .source-input { position: relative; flex: 1; min-width: 0; }
 .source-editor textarea, .syntax-highlight, .search-highlights { font: inherit; line-height: 26px; letter-spacing: normal; tab-size: 2; font-variant-ligatures: none; white-space: pre; }
@@ -247,6 +250,8 @@ body:has(.desktop-mac) .diagram-dialog { top: 62px; height: calc(100dvh - 86px);
 }
 .statusbar { height: 32px; min-height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; font-size: 11px; color: var(--ui-muted); }
 .footer-links { display: flex; align-items: center; gap: 8px; }
+.link-destination { flex: 1; min-width: 0; margin: 0 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; }
+.statusbar .zoom-control { flex-shrink: 0; }
 .footer-link { height: 26px; padding: 0 4px; font-size: 11px; }
 .footer-github { width: 26px; height: 26px; }
 .footer-github img { pointer-events: none; }
