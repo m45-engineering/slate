@@ -1540,6 +1540,11 @@ test('closing the window supports Cancel and Discard and clears discarded recove
   const closed = process.platform === 'darwin' ? page.waitForEvent('close') : application.waitForEvent('close');
   await Promise.all([closed, dialog.getByRole('button', { name: 'Discard', exact: true }).click()]);
   expect(await readFile(file, 'utf8')).toBe(original);
+  // macOS keeps the app running after its last window closes. Quit explicitly:
+  // Playwright's context close can wait indefinitely when no window remains.
+  if (process.platform === 'darwin') {
+    await Promise.all([application.waitForEvent('close'), application.evaluate(({ app }) => app.quit())]);
+  }
   await restart();
   await expect(page.getByRole('heading', { name: 'A real document', exact: true })).toBeVisible();
   await expect(page.getByText('An unsaved draft is available:', { exact: false })).toHaveCount(0);
