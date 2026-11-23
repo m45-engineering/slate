@@ -2599,6 +2599,7 @@ test('control diagram selects parallel arrows by click or keyboard without retai
   await expect(page.locator('.control-details')).toContainText('Stop');
   await page.getByRole('button', { name: 'Delete connection', exact: true }).click();
   await expect(source).toHaveValue(content.replace('Pilot -> Hoist: Stop\n', ''));
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
   await expect(page.locator('.control-details')).toHaveCount(0);
   await page.getByRole('button', { name: 'Select component Pilot', exact: true }).click();
   await expect(page.locator('.control-details')).toContainText('Pilot');
@@ -2610,6 +2611,7 @@ test('control diagram selects parallel arrows by click or keyboard without retai
   await page.keyboard.press('Escape');
   await expect(page.locator('.control-details')).toHaveCount(0);
   const pilot = page.getByRole('button', { name: 'Select component Pilot', exact: true });
+  await expect(pilot).toBeVisible();
   const bounds = (await pilot.boundingBox())!;
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.mouse.down();
