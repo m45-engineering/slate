@@ -134,6 +134,287 @@ async function saveWithShortcut(filePath: string, content: string) {
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
 }
 
+async function openReqif(content?: string, name = 'requirements.reqif') {
+  const source = content ?? await readFile(path.join(process.cwd(), 'tests/fixtures/requirements.reqif'), 'utf8');
+  const target = path.join(directory, name);
+  await writeFile(target, source);
+  await application.evaluate(({ dialog }, target) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [target] });
+  }, target);
+  await page.evaluate(() => window.slate!.open());
+  return { source, target };
+}
+
+async function expectQuietFocus(control: Locator, offset = '-1px') {
+  await page.keyboard.press('Tab');
+  await control.focus();
+  await expect(control).toBeFocused();
+  await expect(control).toHaveCSS('outline-color', 'rgb(133, 133, 133)');
+  await expect(control).toHaveCSS('outline-width', '1px');
+  await expect(control).toHaveCSS('outline-offset', offset);
+}
+
+test('app controls, menus, and dialogs use quiet focus indicators without black frames', async () => {
+  for (const control of [
+    page.getByRole('button', { name: 'Toggle sidebar', exact: true }),
+    page.getByRole('tab', { name: 'Visual', exact: true }),
+    page.getByRole('tab', { name: 'sample.md', exact: true }),
+    page.getByRole('button', { name: 'New file', exact: true }),
+  ]) await expectQuietFocus(control);
+  await page.getByRole('textbox', { name: 'Find file by name', exact: true }).focus();
+  await expect(page.locator('.file-search')).toHaveCSS('box-shadow', 'rgb(133, 133, 133) 0px 0px 0px 1px inset');
+  await expect(page.getByRole('textbox', { name: 'Find file by name', exact: true })).toHaveCSS('outline-style', 'none');
+  await page.keyboard.press('ControlOrMeta+f');
+  await expectQuietFocus(page.getByRole('textbox', { name: 'Find text', exact: true }));
+  await page.getByRole('button', { name: 'Show replace', exact: true }).click();
+  await expectQuietFocus(page.getByRole('textbox', { name: 'Replace with', exact: true }));
+  await page.getByRole('button', { name: 'Close find', exact: true }).click();
+  await page.getByRole('button', { name: 'Text style', exact: true }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toHaveCSS('border-top-width', '0px');
+  await expect(menu).toHaveCSS('outline-style', 'none');
+  await page.keyboard.press('ArrowDown');
+  await expect(menu.locator(':focus')).toHaveCSS('outline-style', 'none');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'New file', exact: true }).click();
+  await expectQuietFocus(page.getByRole('textbox', { name: 'File name', exact: true }));
+  await expectQuietFocus(page.getByRole('combobox', { name: 'File template', exact: true }));
+  await expectQuietFocus(page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }));
+  await page.screenshot({ path: 'tmp/slate-quiet-file-dialog.png' });
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source', exact: true }).focus();
+  await expect(page.getByRole('textbox', { name: 'Markdown source', exact: true })).toHaveCSS('outline-style', 'none');
+  await expect(page.getByRole('textbox', { name: 'Markdown source', exact: true })).toHaveCSS('box-shadow', 'none');
+});
+
+test('ReqIF text, enumeration, and confirmation dialogs have no heavy focus border', async () => {
+  await openReqif();
+  await expectQuietFocus(page.getByRole('textbox', { name: 'Search requirements', exact: true }));
+  await expectQuietFocus(page.getByRole('region', { name: 'Requirements hierarchy' }).getByRole('button', { name: 'Position accuracy', exact: true }));
+  await page.getByRole('button', { name: 'Edit Title', exact: true }).click();
+  const field = page.getByRole('dialog').getByRole('textbox', { name: 'Title', exact: true });
+  await expectQuietFocus(field);
+  await expect(field).toHaveCSS('box-shadow', 'none');
+  await page.screenshot({ path: 'tmp/slate-quiet-reqif-dialog.png' });
+  await field.fill('Changed title');
+  await expectQuietFocus(page.getByRole('button', { name: 'Apply', exact: true }));
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit Status', exact: true }).click();
+  await expectQuietFocus(page.getByRole('dialog').getByRole('combobox'));
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit Review stages', exact: true }).click();
+  await expectQuietFocus(page.getByRole('checkbox', { name: 'Draft', exact: true }), '2px');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Close requirements.reqif', exact: true }).click();
+  await expectQuietFocus(page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }));
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+});
+
+test('control-structure dialog fields use quiet focus while the canvas retains its own selection', async () => {
+  await page.evaluate(content => window.slate!.newDocument({ name: 'quiet.yaml', content }), controlDocument('Pilot (controller) -> Hoist (actuator): Raise\n'));
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+  await page.getByRole('button', { name: 'Add component', exact: true }).click();
+  await expectQuietFocus(page.getByRole('textbox', { name: 'Component name', exact: true }));
+  await expectQuietFocus(page.getByRole('combobox', { name: 'Component role', exact: true }));
+  await page.screenshot({ path: 'tmp/slate-quiet-control-dialog.png' });
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Select component Pilot', exact: true }).focus();
+  await expect(page.getByRole('button', { name: 'Select component Pilot', exact: true })).toHaveCSS('outline-style', 'none');
+});
+
+test('ReqIF visual edits preserve XML, rich text, hierarchy, and relations through save and reopen', async () => {
+  const { source, target } = await openReqif();
+  await expect(page.getByRole('tab', { name: 'Visual', exact: true })).toHaveAttribute('data-state', 'active');
+  await expect(page.getByRole('heading', { name: 'Position accuracy', exact: true })).toBeVisible();
+  await page.screenshot({ path: 'tmp/slate-reqif.png' });
+  await expect(page.locator('.reqif-rich-text strong')).toHaveText('position');
+  await expect(page.locator('.reqif-rich-text table')).toContainText('GPS');
+  await expect(page.locator('.reqif-rich-text img, .reqif-rich-text script')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { reqifExecuted?: boolean }).reqifExecuted)).toBeUndefined();
+  await expect(page.getByRole('button', { name: 'Edit Locked field', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Collapse Position accuracy', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Requirements hierarchy' }).getByRole('button', { name: 'Position display', exact: true })).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Search requirements' }).fill('Position display');
+  await page.getByRole('region', { name: 'Requirements hierarchy' }).getByRole('button', { name: 'Position display', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Position display', exact: true })).toBeVisible();
+  await page.locator('.reqif-relations').getByRole('button', { name: 'Position accuracy', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Search requirements' }).fill('');
+  await page.getByRole('button', { name: 'Edit Title', exact: true }).click();
+  await page.getByRole('dialog').getByRole('textbox', { name: 'Title', exact: true }).fill('Updated <position> & "accuracy"');
+  await page.screenshot({ path: 'tmp/slate-reqif-attribute.png' });
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('.reqif-field').filter({ has: page.getByRole('heading', { name: 'Title', exact: true }) })).toContainText('Updated <position> & "accuracy"');
+  await page.getByRole('button', { name: 'Undo requirement edit' }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Redo requirement edit' }).click();
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  const expected = source.replace('Position &amp; accuracy', 'Updated &lt;position&gt; &amp; &quot;accuracy&quot;');
+  const actual = await page.getByRole('textbox', { name: 'Source editor', exact: true }).inputValue();
+  expect(actual.replace(/LAST-CHANGE="[^"]+"/, 'LAST-CHANGE="2026-01-01T00:00:00Z"')).toBe(expected);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await saveWithShortcut(target, actual);
+  await restart();
+  await expect(page.getByRole('heading', { name: 'Position accuracy', exact: true })).toBeVisible();
+  await expect(page.locator('.reqif-field').filter({ has: page.getByRole('heading', { name: 'Title', exact: true }) })).toContainText('Updated <position> & "accuracy"');
+});
+
+test('ReqIF typed fields validate values and write defaults and absent attributes', async () => {
+  const { target } = await openReqif();
+  async function edit(name: string) {
+    await page.getByRole('button', { name: `Edit ${name}`, exact: true }).click();
+    return page.getByRole('dialog');
+  }
+  let dialog = await edit('Count');
+  await dialog.getByRole('textbox', { name: 'Count', exact: true }).fill('101');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('at most 100');
+  await dialog.getByRole('textbox', { name: 'Count', exact: true }).fill('42');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  dialog = await edit('Delay');
+  await dialog.getByRole('textbox').fill('6');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('at most 5');
+  await dialog.getByRole('textbox').fill('2.5');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  dialog = await edit('Review date');
+  await dialog.getByRole('textbox').fill('tomorrow');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('ISO date');
+  await dialog.getByRole('textbox').fill('2026-02-30T12:00:00Z');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('ISO date');
+  await dialog.getByRole('textbox').fill('2026-11-23T12:00:00Z');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  dialog = await edit('Verified');
+  await dialog.getByRole('combobox').selectOption('true');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  dialog = await edit('Status');
+  await dialog.getByRole('combobox').selectOption('approved');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  dialog = await edit('Review stages');
+  await dialog.getByRole('checkbox', { name: 'Draft', exact: true }).check();
+  await dialog.getByRole('checkbox', { name: 'Approved', exact: true }).check();
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  dialog = await edit('Default owner');
+  await expect(dialog.getByRole('textbox')).toHaveValue('Team');
+  await dialog.getByRole('textbox').fill('Avionics');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  dialog = await edit('Text');
+  const rich = await dialog.getByRole('textbox').inputValue();
+  await dialog.getByRole('textbox').fill('<div>Broken');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Invalid XML');
+  await dialog.getByRole('textbox').fill(rich.replace('within 1 m.', 'within 2 m.'));
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('.reqif-rich-text')).toContainText('within 2 m.');
+  await expect(page.locator('.reqif-rich-text strong')).toHaveText('position');
+  await page.getByRole('region', { name: 'Requirements hierarchy' }).getByRole('button', { name: 'Position display', exact: true }).click();
+  dialog = await edit('Title');
+  await dialog.getByRole('textbox').fill('Display title');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await page.getByRole('region', { name: 'Requirements hierarchy' }).getByRole('button', { name: 'Unassigned requirement', exact: true }).click();
+  dialog = await edit('Title');
+  await dialog.getByRole('textbox').fill('New unassigned title');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => readFile(target, 'utf8')).toContain('New unassigned title');
+  const saved = await readFile(target, 'utf8');
+  expect(saved).toContain('THE-VALUE="42"');
+  expect(saved).toContain('THE-VALUE="true"');
+  expect(saved).toContain('THE-VALUE="Avionics"');
+  expect(saved).toContain('THE-VALUE="Display title"');
+  expect(saved).toContain('THE-VALUE="2.5"');
+  expect(saved).toContain('THE-VALUE="2026-11-23T12:00:00Z"');
+  expect(saved).toContain('<!-- preserve enum metadata --><tool:selection note="keep" />');
+  expect(saved).toContain('<r:DEFAULT-VALUE><r:ATTRIBUTE-VALUE-STRING THE-VALUE="Team">');
+});
+
+test('ReqIF malformed source stays editable and recovers its visual view', async () => {
+  const { source } = await openReqif('<REQ-IF>', 'broken.reqif');
+  await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue(source);
+  await expect(page.getByRole('status')).toContainText('Invalid XML');
+  const valid = await readFile(path.join(process.cwd(), 'tests/fixtures/requirements.reqif'), 'utf8');
+  await page.getByRole('textbox', { name: 'Source editor', exact: true }).fill(valid.replaceAll('r:', '').replace('xmlns:r=', 'xmlns='));
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Position accuracy', exact: true })).toBeVisible();
+  // Editing source and switching back must rebuild the read model.
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Source editor', exact: true }).fill(valid.replace('Position accuracy', 'Revised requirement'));
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Revised requirement', exact: true })).toBeVisible();
+});
+
+test('ReqIF XML extensions and legacy value elements preserve comments, Unicode extensions, and CRLF', async () => {
+  const fixture = await readFile(path.join(process.cwd(), 'tests/fixtures/requirements.reqif'), 'utf8');
+  const source = fixture.replace("<r:ATTRIBUTE-VALUE-STRING THE-VALUE='Position &amp; accuracy'>", '<r:ATTRIBUTE-VALUE-STRING><r:THE-VALUE><![CDATA[Position & accuracy]]></r:THE-VALUE>')
+    .replace('<tool:extension value="keep exactly" />', '<tool:工程 value="keep exactly" />').replaceAll('\n', '\r\n');
+  for (const name of ['requirements.reqif.xml', 'requirements.xml']) {
+    const { target } = await openReqif(source, name);
+    await expect(page.getByRole('heading', { name: 'Position accuracy', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Edit Title', exact: true }).click();
+    await page.getByRole('dialog').getByRole('textbox').fill('Updated & verified');
+    await page.getByRole('button', { name: 'Apply', exact: true }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => readFile(target, 'utf8')).toContain('Updated &amp; verified');
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    const saved = await readFile(target, 'utf8');
+    expect(saved.replace(/LAST-CHANGE="[^"]+"/, 'LAST-CHANGE="2026-01-01T00:00:00Z"')).toBe(source.replace('<![CDATA[Position & accuracy]]>', 'Updated &amp; verified'));
+  }
+});
+
+test('ReqIF edits retain external-change protection', async () => {
+  const { source, target } = await openReqif();
+  await page.getByRole('button', { name: 'Edit Title', exact: true }).click();
+  await page.getByRole('dialog').getByRole('textbox').fill('Local draft');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  const external = source.replace('Position accuracy', 'External change');
+  await writeFile(target, external);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('.notice[role="alert"]')).toContainText('changed outside Slate');
+  expect(await readFile(target, 'utf8')).toBe(external);
+  await expect(page.locator('.reqif-field').filter({ has: page.getByRole('heading', { name: 'Title', exact: true }) })).toContainText('Local draft');
+});
+
+test('ReqIF navigation previews text and preserves its resizable width without changing the file', async () => {
+  const { source } = await openReqif();
+  const tree = page.getByRole('region', { name: 'Requirements hierarchy' });
+  await expect(tree.locator('[title]')).toHaveCount(0);
+  const richRow = tree.getByRole('button', { name: 'Position accuracy', exact: true });
+  await expect(richRow.locator('.reqif-row-preview')).toContainText('The aircraft shall report position within 1 m.');
+  await expect(richRow.locator('.reqif-row-preview')).not.toContainText('window.reqifExecuted');
+  const longText = 'Upon receipt of a command, the software shall update the command counter and report the result. '.repeat(8).trim();
+  const stringSource = source.replace('LONG-NAME="Title"', 'LONG-NAME="Requirement Text"').replace('Position &amp; accuracy', longText);
+  const { target } = await openReqif(stringSource, 'navigation.reqif');
+  await expect(tree.getByRole('button', { name: 'Position accuracy', exact: true }).locator('.reqif-row-preview')).toHaveText(longText);
+  const preview = tree.getByRole('button', { name: 'Position accuracy', exact: true }).locator('.reqif-row-preview');
+  expect(await preview.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+  const handle = page.getByRole('separator', { name: 'Resize requirements navigation' });
+  const initial = (await tree.boundingBox())!.width;
+  const bounds = (await handle.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 120, bounds.y + bounds.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(async () => (await tree.boundingBox())!.width).toBeGreaterThan(initial + 80);
+  const enlarged = (await tree.boundingBox())!.width;
+  await handle.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(async () => (await tree.boundingBox())!.width).toBeLessThan(enlarged - 5);
+  const resized = (await tree.boundingBox())!.width;
+  await expect.poll(() => page.evaluate(() => Number(localStorage.getItem('slate-reqif-navigation-percent')))).toBeGreaterThan(0);
+  await page.screenshot({ path: 'tmp/slate-reqif-navigation.png' });
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect.poll(async () => (await tree.boundingBox())!.width).toBeCloseTo(resized, 0);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  expect(await readFile(target, 'utf8')).toBe(stringSource);
+  await restart();
+  await expect.poll(async () => (await page.getByRole('region', { name: 'Requirements hierarchy' }).boundingBox())?.width ?? 0).toBeCloseTo(resized, 0);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  expect(await readFile(target, 'utf8')).toBe(stringSource);
+});
+
 test.beforeEach(async () => {
   rendererErrors = [];
   directory = await mkdtemp(path.join(os.tmpdir(), 'slate-desktop-'));
@@ -2540,9 +2821,8 @@ test('new M45 YAML structures support adding and deleting through the diagram to
   await expect(source).toHaveValue(/Monitor \(controller\)/);
   await page.getByRole('button', { name: 'Add connection', exact: true }).click();
   const from = page.getByRole('combobox', { name: 'From component', exact: true });
-  await from.focus();
+  await expectQuietFocus(from);
   await expect(from).toHaveCSS('border-top-width', '0px');
-  await expect(from).toHaveCSS('outline-style', 'none');
   await expect(from.locator('..').locator('svg')).toBeVisible();
   await page.screenshot({ path: 'tmp/control-borderless-select.png' });
   await page.getByRole('combobox', { name: 'From component', exact: true }).selectOption({ label: 'Monitor' });

@@ -12,7 +12,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-0.1.8-mac-arm64.dmg` from the [v0.1.8 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.8). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-0.1.9-mac-arm64.dmg` from the [v0.1.9 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.9). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -22,13 +22,13 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-0.1.8-win-x64.exe` from the [v0.1.8 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.8) for a standard Intel/AMD PC.
+1. Download `Slate-0.1.9-win-x64.exe` from the [v0.1.9 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.9) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Download both installers from the [v0.1.8 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.8). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
+Download both installers from the [v0.1.9 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.9). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
 
 ## Features
 
@@ -56,6 +56,14 @@ Download both installers from the [v0.1.8 release](https://github.com/m45-engine
 - Detection of changes made by other editors, with Reload and Save a copy actions.
 - Bundled Geist Sans and Geist Mono; no font downloads or server at runtime.
 - A local recovery draft for unsaved edits. This is a convenience, not a backup system.
+
+## ReqIF requirements
+
+Open a `.reqif`, `.reqif.xml`, or ReqIF `.xml` file to browse its specification hierarchy in **Visual** view. Navigation rows include a two-line text preview when the file defines a standard text attribute (such as `ReqIF.Text`, `Requirement Text`, or `Text`), a `Description`, or an XHTML attribute. Drag the divider to resize the navigation pane; Slate remembers its width. Search requirement names, identifiers, and attribute values; select an object to inspect its attributes and follow its declared relations. Objects outside specifications remain accessible.
+
+Choose **Edit** beside an attribute, then **Apply** to update the document draft. String, boolean, integer, real, date, and enumeration fields use their declared definitions, including defaults and numeric limits. Rich text has an inert formatted preview; its editor exposes XHTML so formatting and embedded markup remain explicit. Embedded resources are not loaded. Unknown attributes and fields marked noneditable remain read-only.
+
+**Save** writes the draft through Slate's normal file-conflict checks. Attribute edits patch the original XML rather than rebuilding the file: identifiers, hierarchy, relations, comments, and unrelated tool extensions are retained. Undo and Redo are available in the requirements toolbar. **Source** remains available for full XML editing; malformed documents stay in Source with an explanation. This version edits object attributes; creating objects, changing hierarchy or relations, editing type definitions, and opening compressed `.reqifz` packages are not included. It does not perform full ReqIF schema validation.
 
 ## Control structures
 

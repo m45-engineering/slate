@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.9 - 2026-11-23
+
+- Browse ReqIF specification hierarchies, search requirements, inspect typed attributes, and follow declared relations in Visual view.
+- Edit object attributes with validation, undo and redo, and normal Save conflict protection. Preserve unrelated XML, comments, identifiers, and tool extensions; keep Source available for full XML editing.
+- Resize the requirements navigation pane, remember its width, and show truncated requirement text beside the identifier without hover tooltips.
+- Replace heavy black control borders and focus rings with thin gray indicators throughout the app while retaining keyboard focus visibility.
+
 ## 0.1.8 - 2026-11-23
 
 - Open and create M45 control structures as one YAML or JSON file containing the simple source, graph, and saved layout. Switch between Source and Visual views, with validation and preserved record identities and metadata.
