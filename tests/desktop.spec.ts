@@ -135,7 +135,8 @@ async function saveWithShortcut(filePath: string, content: string) {
 }
 
 async function openReqif(content?: string, name = 'requirements.reqif') {
-  const source = content ?? await readFile(path.join(process.cwd(), 'tests/fixtures/requirements.reqif'), 'utf8');
+  // Git may check out fixtures with CRLF on Windows; make the default case deterministic.
+  const source = content ?? (await readFile(path.join(process.cwd(), 'tests/fixtures/requirements.reqif'), 'utf8')).replaceAll('\r\n', '\n');
   const target = path.join(directory, name);
   await writeFile(target, source);
   await application.evaluate(({ dialog }, target) => {
@@ -347,7 +348,7 @@ test('ReqIF malformed source stays editable and recovers its visual view', async
 
 test('ReqIF XML extensions and legacy value elements preserve comments, Unicode extensions, and CRLF', async () => {
   const fixture = await readFile(path.join(process.cwd(), 'tests/fixtures/requirements.reqif'), 'utf8');
-  const source = fixture.replace("<r:ATTRIBUTE-VALUE-STRING THE-VALUE='Position &amp; accuracy'>", '<r:ATTRIBUTE-VALUE-STRING><r:THE-VALUE><![CDATA[Position & accuracy]]></r:THE-VALUE>')
+  const source = fixture.replaceAll('\r\n', '\n').replace("<r:ATTRIBUTE-VALUE-STRING THE-VALUE='Position &amp; accuracy'>", '<r:ATTRIBUTE-VALUE-STRING><r:THE-VALUE><![CDATA[Position & accuracy]]></r:THE-VALUE>')
     .replace('<tool:extension value="keep exactly" />', '<tool:工程 value="keep exactly" />').replaceAll('\n', '\r\n');
   for (const name of ['requirements.reqif.xml', 'requirements.xml']) {
     const { target } = await openReqif(source, name);
