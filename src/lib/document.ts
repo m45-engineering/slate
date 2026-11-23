@@ -34,7 +34,7 @@ export interface DesktopBridge {
   listFolder(relativePath: string): Promise<FolderListing>;
   searchFolder(query: string, refresh: boolean): Promise<FolderSearch>;
   openFile(relativePath: string): Promise<FileResult>;
-  createEntry(parent: string, name: string, kind: 'file' | 'directory'): Promise<{ changed?: boolean; path?: string; error?: string; canceled?: boolean }>;
+  createEntry(parent: string, name: string, kind: 'file' | 'directory', content?: string): Promise<{ changed?: boolean; path?: string; error?: string; canceled?: boolean }>;
   renameEntry(path: string, name: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
   moveEntry(path: string, destination?: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
   moveFiles(paths: string[], destination?: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string; paths?: string[] }>;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EditorState } from '@tiptap/pm/state';
 import { EditorContent, useEditor } from '@tiptap/react';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -13,6 +13,10 @@ import { SidebarProvider } from './ui/sidebar';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
+import { ControlStructureEditor } from './control-structure-editor';
+import type { IdentityState } from '@/lib/control-structure/schema';
+import type { ControlLayout } from '@/lib/control-structure/layout';
+import { createControlFile, isControlFile, readControlFile, writeControlFile } from '@/lib/control-structure/file';
 import { SourceEditor } from './source-editor';
 import { useFindReplace } from './use-find-replace';
 import { FindHighlights } from '@/lib/find-highlights';
@@ -130,6 +134,18 @@ export function SlateEditor() {
   const dirty = source !== savedSource;
   const markdownDocument = isMarkdown(doc.name);
   const language = fileLabel(doc.name);
+  const controlDocument = isControlFile(doc.name, source);
+  const controlState = useMemo(() => {
+    if (!controlDocument) return null;
+    try { return { file: readControlFile(doc.name, source), error: '' }; }
+    catch (error) { return { file: null, error: (error as Error).message }; }
+  }, [controlDocument, doc.name, source]);
+  const controlFile = controlState?.file;
+  const controlActive = !!controlFile;
+  const controlInvalid = !!controlFile && !controlFile.result.valid;
+  const updateControlSource = useCallback((text: string, identity?: IdentityState, layout?: ControlLayout) => {
+    if (controlFile) setSource(writeControlFile(controlFile, text, identity, layout));
+  }, [controlFile]);
   const unsupported = markdownDocument ? sourceOnlyReason(source) : null;
   const dirtyRef = useRef(dirty);
   sourceRef.current = source;
@@ -151,12 +167,22 @@ export function SlateEditor() {
     onTransaction: () => setRevision(value => value + 1),
   });
 
-  const find = useFindReplace({ editor, source, mode, documentId: doc.id, sourceInput, onSourceChange: setSource });
+  const find = useFindReplace({ editor, source: controlActive ? controlFile.source : source, mode: controlActive ? 'source' : mode, documentId: doc.id, sourceInput, onSourceChange: controlActive ? updateControlSource : setSource });
+
+  const openDocumentFind = useCallback((replace = false) => {
+    if (controlActive && mode === 'visual') setMode('source');
+    find.openFind(replace);
+  }, [controlActive, mode, find.openFind]);
+
+  const navigateDocumentFind = useCallback((direction: number) => {
+    if (controlActive && mode === 'visual') setMode('source');
+    find.navigate(direction);
+  }, [controlActive, mode, find.navigate]);
 
   const cacheActive = useCallback(() => {
     tabDrafts.current.set(docRef.current.id, {
       ...liveState.current, source: sourceRef.current,
-      visualState: liveState.current.mode === 'visual' ? editor?.state ?? null : null,
+      visualState: liveState.current.mode === 'visual' && isMarkdown(docRef.current.name) ? editor?.state ?? null : null,
       scrollTop: scrollArea.current?.scrollTop ?? 0,
       selection: sourceInput.current ? [sourceInput.current.selectionStart, sourceInput.current.selectionEnd] : null,
     });
@@ -170,7 +196,7 @@ export function SlateEditor() {
     for (const id of tabDrafts.current.keys()) if (!ids.has(id) || id === workspace.replaceId) tabDrafts.current.delete(id);
     tabsRef.current = workspace.documents;
     setTabs(workspace.documents);
-    const typeChanged = isMarkdown(next.name) !== isMarkdown(docRef.current.name);
+    const typeChanged = isMarkdown(next.name) !== isMarkdown(docRef.current.name) || isControlFile(next.name, next.content) !== isControlFile(docRef.current.name, sourceRef.current);
     if (next.id === docRef.current.id && workspace.replaceId !== next.id && !typeChanged) {
       docRef.current = next;
       setDoc(next);
@@ -185,7 +211,11 @@ export function SlateEditor() {
     const nextSource = draft?.source ?? recovered?.content ?? next.content;
     const nextSaved = draft?.savedSource ?? (next.path ? next.content : next.unsaved ? '' : next.content);
     if (recovered) setRecoveries(items => items.filter(item => item.id !== next.id));
-    const nextMode = !isMarkdown(next.name) ? 'source' : draft?.mode ?? (!sourceOnlyReason(nextSource) ? 'visual' : 'source');
+    let controlReadable = false;
+    if (isControlFile(next.name, nextSource) || isControlFile(next.name, nextSaved)) {
+      try { readControlFile(next.name, nextSource); controlReadable = true; } catch { /* Raw source remains editable. */ }
+    }
+    const nextMode = !isMarkdown(next.name) && !controlReadable ? 'source' : draft?.mode ?? (controlReadable || !sourceOnlyReason(nextSource) ? 'visual' : 'source');
     const changed = workspace.replaceId === next.id ? false : diskChanges.current.get(next.id) ?? draft?.diskChanged ?? false;
     if (workspace.replaceId === next.id) diskChanges.current.delete(next.id);
     documentVersion.current++;
@@ -196,7 +226,7 @@ export function SlateEditor() {
     setDoc(next); setSource(nextSource); setSavedSource(nextSaved); setMode(nextMode);
     setDiskChanged(changed); if (!preserveNotice) setNotice(''); setLinkOpen(false); setFormula(null);
     setHoveredLink(''); setFocusedLink('');
-    if (editor && nextMode === 'visual') {
+    if (editor && nextMode === 'visual' && isMarkdown(next.name)) {
       if (draft?.visualState) editor.view.updateState(draft.visualState);
       else {
         editor.commands.setContent(nextSource, { contentType: 'markdown', emitUpdate: false });
@@ -226,21 +256,27 @@ export function SlateEditor() {
   }, [loadWorkspace]);
 
   const switchMode = useCallback(() => {
-    if (!markdownDocument) return;
+    if (!markdownDocument && !controlDocument) return;
+    if (controlDocument && !controlFile) { setNotice(controlState?.error ?? 'Cannot read this control structure.'); return; }
     if (mode === 'visual') { setMode('source'); return; }
     if (unsupported) { setNotice(`Keep this document in Markdown to preserve its ${unsupported}.`); return; }
-    if (editor) {
+    if (editor && markdownDocument) {
       editor.commands.setContent(sourceRef.current, { contentType: 'markdown', emitUpdate: false });
       editor.view.updateState(EditorState.create({ schema: editor.schema, doc: editor.state.doc, plugins: editor.state.plugins }));
     }
     setMode('visual');
-  }, [editor, mode, unsupported, markdownDocument]);
+  }, [editor, mode, unsupported, markdownDocument, controlDocument, controlFile, controlState]);
 
   const save = useCallback(async (saveAs = false, confirmationId?: number): Promise<boolean> => {
     if (savingRef.current) return false;
     if (!saveAs && !dirtyRef.current) return true;
     const content = sourceRef.current;
     const currentDocument = docRef.current;
+    if (isControlFile(currentDocument.name, content)) {
+      try {
+        if (!readControlFile(currentDocument.name, content).result.valid) { setNotice('Correct the control structure errors before saving. Your draft is preserved.'); return false; }
+      } catch { /* Source mode may save a manually repaired or incomplete structured file. */ }
+    }
     const version = documentVersion.current;
     savingRef.current = true;
     setSaving(true);
@@ -260,7 +296,7 @@ export function SlateEditor() {
         }
         if (!result.document) return false;
         docRef.current = result.document;
-        if (!isMarkdown(result.document.name)) setMode('source');
+        if (!isMarkdown(result.document.name) && !isControlFile(result.document.name, content)) setMode('source');
         setDoc(result.document); setSavedSource(content); setDiskChanged(false);
         liveState.current.savedSource = content;
         diskChanges.current.delete(currentDocument.id);
@@ -318,6 +354,13 @@ export function SlateEditor() {
   const newDocument = useCallback(async () => {
     if (window.slate) { await window.slate.newDocument(); return; }
     loadDocument({ id: crypto.randomUUID(), path: null, name: 'Untitled.md', content: '' });
+  }, [loadDocument]);
+
+  const newControlStructure = useCallback(async () => {
+    const draft = { name: 'Untitled.yaml', content: createControlFile() };
+    if (window.slate) await window.slate.newDocument(draft);
+    else loadDocument({ ...draft, id: crypto.randomUUID(), path: null, unsaved: true });
+    setMode('source');
   }, [loadDocument]);
 
   const closeTab = useCallback(async (id: string) => {
@@ -435,6 +478,7 @@ export function SlateEditor() {
         if (confirmation?.allowSave) void saveBeforeContinuing(true);
         else void save(true);
       }
+      if (command === 'new-control-structure') void newControlStructure();
       if (command === 'close-tab') void closeTab(docRef.current.id);
       if (command === 'toggle-mode') switchMode();
       if (command === 'export-pdf' && !confirmation) void exportPdf();
@@ -442,10 +486,10 @@ export function SlateEditor() {
       if (command === 'zoom-in') zoomDocument('in');
       if (command === 'zoom-out') zoomDocument('out');
       if (command === 'zoom-reset') zoomDocument('reset');
-      if (command === 'find' && !confirmation && !formula) find.openFind();
-      if (command === 'replace' && !confirmation && !formula) find.openFind(true);
-      if (command === 'find-next' && !confirmation && !formula) find.navigate(1);
-      if (command === 'find-previous' && !confirmation && !formula) find.navigate(-1);
+      if (command === 'find' && !confirmation && !formula) openDocumentFind();
+      if (command === 'replace' && !confirmation && !formula) openDocumentFind(true);
+      if (command === 'find-next' && !confirmation && !formula) navigateDocumentFind(1);
+      if (command === 'find-previous' && !confirmation && !formula) navigateDocumentFind(-1);
     });
     const keyboard = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return;
@@ -453,10 +497,10 @@ export function SlateEditor() {
         const key = event.key.toLowerCase();
         if (key === 'f' || (event.ctrlKey && key === 'h') || (event.metaKey && event.altKey && key === 'f')) {
           event.preventDefault();
-          find.openFind(event.altKey || key === 'h');
+          openDocumentFind(event.altKey || key === 'h');
           return;
         }
-        if (key === 'g') { event.preventDefault(); find.navigate(event.shiftKey ? -1 : 1); return; }
+        if (key === 'g') { event.preventDefault(); navigateDocumentFind(event.shiftKey ? -1 : 1); return; }
       }
       if (event.key.toLowerCase() === 's') {
         event.preventDefault();
@@ -484,10 +528,10 @@ export function SlateEditor() {
     };
     window.addEventListener('keydown', keyboard); window.addEventListener('beforeunload', beforeUnload);
     return () => { unsubscribe?.(); window.removeEventListener('keydown', keyboard); window.removeEventListener('beforeunload', beforeUnload); };
-  }, [save, open, openFolder, newDocument, switchMode, zoomDocument, confirmation, formula, saveBeforeContinuing, closeTab, selectTab, exportPdf, find.openFind, find.navigate]);
+  }, [save, open, openFolder, newDocument, newControlStructure, switchMode, zoomDocument, confirmation, formula, saveBeforeContinuing, closeTab, selectTab, exportPdf, openDocumentFind, navigateDocumentFind]);
 
   const headings: Heading[] = [];
-  if (mode === 'visual') {
+  if (mode === 'visual' && markdownDocument) {
     editor?.state.doc.descendants(node => {
       if (node.type.name === 'heading') headings.push({ text: node.textContent || 'Untitled section', level: node.attrs.level, index: headings.length });
     });
@@ -501,7 +545,7 @@ export function SlateEditor() {
       index += (token.raw.match(/\n/g) || []).length;
     }
   }
-  const toolbarDisabled = mode !== 'visual' || !editor;
+  const toolbarDisabled = mode !== 'visual' || !markdownDocument || !editor;
   const inTable = editor?.isActive('table') && !toolbarDisabled;
   void revision;
 
@@ -548,13 +592,13 @@ export function SlateEditor() {
     }}>
     <header className="titlebar">
       <div className="brand"><Tool label="Toggle sidebar" icon="panel" active={outlineOpen} onClick={() => setOutlineOpen(!outlineOpen)} /><span>Slate</span></div>
-      <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{markdownDocument && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>
+      <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{(markdownDocument || controlDocument) && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>
       <div className="file-actions">
-        <Tool label={`Find (${isMac ? '⌘' : 'Ctrl+'}F)`} icon="search" onClick={() => find.openFind()} />
+        <Tool label={`Find (${isMac ? '⌘' : 'Ctrl+'}F)`} icon="search" onClick={() => openDocumentFind()} />
         {desktop && markdownDocument && <TooltipHint content={exporting ? 'Exporting PDF…' : 'Export PDF'}><Button variant="ghost" className="text-button export-button" aria-label={exporting ? 'Exporting PDF' : 'Export PDF'} disabled={exporting || saving} onClick={() => void exportPdf()}><Icon name="file" /><span>{exporting ? 'Exporting…' : 'Export PDF'}</span></Button></TooltipHint>}
-        <TooltipHint content={`New document (${isMac ? '⌘' : 'Ctrl+'}N)`}><Button variant="ghost" className="text-button" onClick={() => void newDocument()}><Icon name="plus" /><span>New</span></Button></TooltipHint>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="text-button"><Icon name="plus" /><span>New</span><Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => void newDocument()}>New Markdown document</DropdownMenuItem><DropdownMenuItem onSelect={() => void newControlStructure()}>New control structure</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="text-button"><Icon name="open" /><span>Open</span><Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => void open()}>Open file…</DropdownMenuItem><DropdownMenuItem onSelect={() => void openFolder()}>Open folder…</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
-        <Button className="save-button" onClick={() => void save()} disabled={saving || !dirty}><Icon name={saving ? 'more' : 'save'} size={15} /><span>{desktop ? 'Save' : 'Download'}</span></Button>
+        <Button className="save-button" onClick={() => void save()} disabled={saving || !dirty || controlInvalid}><Icon name={saving ? 'more' : 'save'} size={15} /><span>{desktop ? 'Save' : 'Download'}</span></Button>
       </div>
     </header>
 
@@ -570,6 +614,7 @@ export function SlateEditor() {
       clearRecovery(recovery.id);
     }}>Recover as new document</Button><Button variant="ghost" size="icon" aria-label="Dismiss recovery" onClick={() => clearRecovery(recovery.id)}><Icon name="close" size={14} /></Button></div>}
     {diskChanged && <div className="notice warning" role="alert"><span>This file changed outside Slate. Your edits are still here.</span><Button variant="ghost" size="sm" onClick={() => void window.slate?.reload()}>Reload file</Button><Button variant="ghost" size="sm" onClick={() => void save(true)}>Save a copy</Button></div>}
+    {controlState?.error && <div className="notice" role="status"><span>{controlState.error}</span></div>}
     {unsupported && mode === 'source' && <div className="notice" role="status"><span>This document contains {unsupported}. Use Markdown to preserve it.</span></div>}
     {notice && !confirmation && <div className="notice" role="status"><span>{notice}</span><Button variant="ghost" size="icon" aria-label="Dismiss message" onClick={() => setNotice('')}><Icon name="close" size={14} /></Button></div>}
 
@@ -582,13 +627,13 @@ export function SlateEditor() {
       }}>
       {outlineOpen && <>
       <ResizablePanel id="files" panelRef={sidebarPanel} defaultSize={sidebarWidth} minSize={180} maxSize={520} groupResizeBehavior="preserve-pixel-size" onResize={size => { currentSidebarWidth.current = size.inPixels; }}>
-      <FolderSidebar folder={folder} documentPath={doc.path} onOpenFolder={() => void openFolder()} onError={setNotice} outline={<nav className="outline" aria-label="Document outline">{headings.length ? headings.map((heading, index) => <Button variant="ghost" key={`${index}-${heading.index}`} className={`${heading.level === 1 ? 'outline-title' : ''}`} style={{ paddingLeft: `${Math.max(0, heading.level - 2) * 10 + 12}px` }} onClick={() => jumpToHeading(heading)}>{heading.text}</Button>) : <p className="outline-empty">{markdownDocument ? <>Your headings will<br />appear here.</> : <>Outline is available for<br />Markdown documents.</>}</p>}</nav>} />
+      <FolderSidebar onControlStructureCreated={() => setMode('source')} folder={folder} documentPath={doc.path} onOpenFolder={() => void openFolder()} onError={setNotice} outline={<nav className="outline" aria-label="Document outline">{headings.length ? headings.map((heading, index) => <Button variant="ghost" key={`${index}-${heading.index}`} className={`${heading.level === 1 ? 'outline-title' : ''}`} style={{ paddingLeft: `${Math.max(0, heading.level - 2) * 10 + 12}px` }} onClick={() => jumpToHeading(heading)}>{heading.text}</Button>) : <p className="outline-empty">{markdownDocument ? <>Your headings will<br />appear here.</> : <>Outline is available for<br />Markdown documents.</>}</p>}</nav>} />
       </ResizablePanel>
       <ResizableHandle aria-label="Resize sidebar" className="workspace-resize-handle" />
       </>}
       <ResizablePanel id="editor" minSize={300}>
       <main className="editor-main">
-        <div className={`formatbar ${toolbarDisabled ? 'source-formatbar' : ''}`} aria-label="Formatting toolbar">
+        <div style={controlActive ? { display: 'none' } : undefined} className={`formatbar ${toolbarDisabled ? 'source-formatbar' : ''}`} aria-label="Formatting toolbar">
           {toolbarDisabled ? <span className="source-caption"><Icon name="code" />{markdownDocument ? 'Markdown source' : language}</span> : <>
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button variant="ghost" className="text-style-trigger" aria-label="Text style"><span>{editor?.isActive('heading') ? `Heading ${editor.getAttributes('heading').level}` : 'Normal text'}</span><Icon name="chevron" size={13} /></Button></DropdownMenuTrigger>
@@ -628,10 +673,11 @@ export function SlateEditor() {
           setLinkOpen(false);
         }}><Input autoFocus aria-label="Link URL" placeholder="https://…" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} /><Button type="submit" size="sm">Apply</Button><Button variant="ghost" size="sm" onClick={() => setLinkOpen(false)}>Cancel</Button></form>}
         {inTable && <div className="table-actions" aria-label="Table actions"><span>Table</span><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().addRowAfter().run()}>+ Row</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().addColumnAfter().run()}>+ Column</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteRow().run()}>Delete row</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteColumn().run()}>Delete column</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteTable().run()}>Delete table</Button></div>}
-        <div className="document-scroll" ref={scrollArea}>
-          <div className={`paper ${mode === 'source' ? 'source-paper' : ''} ${!markdownDocument ? 'code-paper' : ''}`} style={{ zoom: documentZoom / 100 }}>
+        <div className={`document-scroll${controlActive ? ' control-document-scroll' : ''}`} ref={scrollArea}>
+          {controlActive && <ControlStructureEditor key={doc.id} mode={mode} onModeChange={setMode} onSave={() => void save()} saveDisabled={saving || !dirty || controlInvalid} notice={notice} source={controlFile.source} layout={controlFile.layout} result={controlFile.result} onChange={updateControlSource} inputRef={sourceInput} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
+          <div hidden={controlActive} className={`paper ${mode === 'source' ? 'source-paper' : ''} ${!markdownDocument ? 'code-paper' : ''}`} style={{ zoom: documentZoom / 100 }}>
             {/* Keep Tiptap mounted so its React plugins are not registered twice when switching views. */}
-            <div hidden={mode !== 'visual'}><EditorContent editor={editor} /></div>{mode === 'source' && <SourceEditor key={doc.id} ref={sourceInput} value={source} filename={doc.name} label={markdownDocument ? 'Markdown source' : 'Source editor'} onChange={setSource} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
+            <div hidden={mode !== 'visual' || !markdownDocument}><EditorContent editor={editor} /></div>{mode === 'source' && !controlActive && <SourceEditor key={doc.id} ref={sourceInput} value={source} filename={doc.name} label={markdownDocument ? 'Markdown source' : 'Source editor'} onChange={setSource} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
           </div>
         </div>
       </main>

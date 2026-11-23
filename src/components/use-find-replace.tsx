@@ -47,7 +47,7 @@ export function useFindReplace({ editor, source, mode, documentId, sourceInput, 
     } else {
       const input = sourceInput.current;
       const mark = input?.parentElement?.querySelector<HTMLElement>('.find-match-active');
-      const scroll = input?.closest('.document-scroll');
+      const scroll = input?.closest('.control-source-scroll') ?? input?.closest('.document-scroll');
       if (!input || !mark || !scroll) return;
       input.setSelectionRange(current.from, current.to);
       if (mark.offsetLeft < input.scrollLeft) input.scrollLeft = mark.offsetLeft;

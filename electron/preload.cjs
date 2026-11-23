@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld('slate', {
   listFolder: (relativePath) => ipcRenderer.invoke('folder:list', relativePath),
   searchFolder: (query, refresh) => ipcRenderer.invoke('folder:search', query, refresh),
   openFile: (relativePath) => ipcRenderer.invoke('folder:open-file', relativePath),
-  createEntry: (parent, name, kind) => ipcRenderer.invoke('folder:create', parent, name, kind),
+  createEntry: (parent, name, kind, content) => ipcRenderer.invoke('folder:create', parent, name, kind, content),
   renameEntry: (path, name) => ipcRenderer.invoke('folder:rename', path, name),
   moveEntry: (path, destination) => ipcRenderer.invoke('folder:move', path, destination),
   moveFiles: (paths, destination) => ipcRenderer.invoke('folder:move-files', paths, destination),

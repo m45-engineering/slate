@@ -1,0 +1,1 @@
+export const CONTROL_EXAMPLE = 'Pilot (controller) -> Hoist (actuator): Raise / lower / stop\nHoist -> Pilot: Operating state [feedback]\n\nPilot process model:\n  Cable motion\n  Load position\n\nPilot control algorithm:\n  Stop when the operator releases the command.\n';

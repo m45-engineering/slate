@@ -15,7 +15,7 @@ export function findInDocument(doc: Node, query: string, matchCase = false): Mat
   const matches: Match[] = [];
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return;
-    if (node.type.name === 'codeBlock' && node.attrs.language === 'mermaid') return false;
+    if (node.type.name === 'codeBlock' && ['mermaid', 'control-structure', 'm45-control-structure'].includes(node.attrs.language)) return false;
     let text = '';
     let start = pos + 1;
     const flush = () => {

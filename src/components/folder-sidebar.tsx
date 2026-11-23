@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, type ReactNode, type MouseEvent, type Keyb
 import { ChevronRight, File, FilePlus, FileText, Folder, FolderOpen, FolderPlus, RefreshCw, Search, X } from 'lucide-react';
 import type { FolderEntry, FolderListing, FolderSearch, LocalFolder } from '@/lib/document';
 import { Button } from '@/components/ui/button';
+import { createControlFile } from '@/lib/control-structure/file';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Input } from '@/components/ui/input';
 import { TooltipHint } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -116,8 +118,8 @@ function Entry({ entry, depth, currentPath, refreshKey, revealPath, onMenu, drag
   >{entry.editable ? <FileText /> : <File />}<span>{entry.name}</span></SidebarMenuButton></TooltipHint></SidebarMenuItem>;
 }
 
-export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, outline }: {
-  folder: LocalFolder | null; documentPath: string | null; onOpenFolder(): void; onError(message: string): void; outline: ReactNode;
+export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, outline, onControlStructureCreated }: {
+  folder: LocalFolder | null; documentPath: string | null; onOpenFolder(): void; onError(message: string): void; outline: ReactNode; onControlStructureCreated(): void;
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [tab, setTab] = useState('files');
@@ -130,6 +132,7 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
   const [menu, setMenu] = useState<{ entry: FolderEntry; paths: string[]; x: number; y: number } | null>(null);
   const [action, setAction] = useState<{ type: 'rename' | 'delete' | 'new-file' | 'new-folder'; entry: FolderEntry } | null>(null);
   const [name, setName] = useState('');
+  const [template, setTemplate] = useState<'empty' | 'control'>('empty');
   const [revealPath, setRevealPath] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const dragSourceRef = useRef<FolderEntry | null>(null);
@@ -168,10 +171,11 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
   };
   const beginAction = (type: 'rename' | 'delete', entry: FolderEntry) => { setAction({ type, entry }); setName(entry.name); setActionError(''); };
 
-  const beginCreate = (type: 'new-file' | 'new-folder', parent?: FolderEntry) => {
+  const beginCreate = (type: 'new-file' | 'new-folder', parent?: FolderEntry, initialTemplate: 'empty' | 'control' = 'empty') => {
     if (!folder) return;
     setAction({ type, entry: parent ?? { path: '', name: folder.name, kind: 'directory', editable: false } });
-    setName(type === 'new-file' ? 'Untitled.md' : ''); setActionError('');
+    setTemplate(initialTemplate);
+    setName(type === 'new-file' ? initialTemplate === 'control' ? 'Untitled.yaml' : 'Untitled.md' : ''); setActionError('');
   };
 
   async function move(entry: FolderEntry, destination?: string) {
@@ -279,6 +283,7 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
   async function submitAction() {
     if (!action || working) return;
     const current = action;
+    if (current.type === 'new-file' && template === 'control' && !/\.(?:ya?ml|json)$/i.test(name)) { setActionError('Use a .yaml, .yml, or .json filename for an M45 control structure.'); return; }
     setWorking(true); setActionError('');
     // Close the Trash confirmation before any unsaved-tab prompts are shown.
     if (current.type === 'delete') setAction(null);
@@ -287,7 +292,7 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
         ? await window.slate?.renameEntry(current.entry.path, name)
         : current.type === 'delete'
           ? await window.slate?.trashEntry(current.entry.path)
-          : await window.slate?.createEntry(current.entry.path, name, current.type === 'new-file' ? 'file' : 'directory');
+          : await window.slate?.createEntry(current.entry.path, name, current.type === 'new-file' ? 'file' : 'directory', current.type === 'new-file' && template === 'control' ? createControlFile(name.replace(/\.[^.]+$/, ''), /\.json$/i.test(name) ? 'json' : 'yaml') : '');
       if (result?.error) {
         if (current.type !== 'delete') setActionError(result.error);
         else onError(result.error);
@@ -295,6 +300,7 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
         setAction(null);
         if (result?.changed) {
           setRefreshKey(value => value + 1);
+          if (current.type === 'new-file' && template === 'control') onControlStructureCreated();
           if (current.type === 'new-file' || current.type === 'new-folder') {
             setQuery('');
             setRevealPath('path' in result && typeof result.path === 'string' ? result.path : current.entry.path);
@@ -372,6 +378,7 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
       <DropdownMenuContent align="start" onCloseAutoFocus={event => event.preventDefault()}>
         {menu?.entry.kind === 'directory' && <>
           <DropdownMenuItem onSelect={() => beginCreate('new-file', menu.entry)}>New File…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => beginCreate('new-file', menu.entry, 'control')}>New control structure…</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => beginCreate('new-folder', menu.entry)}>New Folder…</DropdownMenuItem>
           <DropdownMenuSeparator />
         </>}
@@ -389,6 +396,11 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
         <DialogDescription>{creating ? `Create ${action?.type === 'new-file' ? 'a file' : 'a folder'} in ${action.entry.path || action.entry.name}.` : action?.type === 'rename' ? `Choose a new name for ${action.entry.name}.` : `${action?.entry.name} will be moved to your system Trash. Open tabs for this item will close.`}</DialogDescription>
         <form onSubmit={event => { event.preventDefault(); void submitAction(); }}>
           {action && action.type !== 'delete' && <Input className="mt-4" aria-label={action.type === 'new-file' ? 'File name' : action.type === 'new-folder' ? 'Folder name' : 'New name'} autoFocus value={name} onChange={event => setName(event.target.value)} onFocus={event => event.currentTarget.select()} />}
+          {action?.type === 'new-file' && <label className="new-file-template">Template<NativeSelect aria-label="File template" value={template} onChange={event => {
+            const next = event.target.value as typeof template;
+            setTemplate(next);
+            if (next === 'control') setName(value => value.replace(/\.[^.]+$/, '') + '.yaml');
+          }}><option value="empty">Empty file</option><option value="control">Control structure (M45)</option></NativeSelect></label>}
           {actionError && <p role="alert" className="mt-3 text-sm">{actionError}</p>}
           <DialogFooter><Button type="button" variant="secondary" disabled={working} onClick={() => setAction(null)}>Cancel</Button><Button type="submit" disabled={working || (action?.type !== 'delete' && !name.trim())}>{working ? 'Working…' : creating ? 'Create' : action?.type === 'rename' ? 'Rename' : 'Move to Trash'}</Button></DialogFooter>
         </form>

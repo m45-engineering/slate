@@ -3,6 +3,13 @@ import { mkdir, mkdtemp, realpath, writeFile, readFile, rm, unlink } from 'node:
 import os from 'node:os';
 import path from 'node:path';
 
+import { createControlFile, readControlFile, writeControlFile } from '../src/lib/control-structure/file';
+
+function controlDocument(source: string, format: 'yaml' | 'json' = 'yaml') {
+  const file = readControlFile(`test.${format}`, createControlFile('Test control structure', format));
+  return writeControlFile(file, source);
+}
+
 let application: ElectronApplication;
 let applicationClosed = false;
 let rendererErrors: string[] = [];
@@ -426,6 +433,8 @@ test('Mermaid supports pointer-centered zoom, dragging, and fit without editing 
   await expect(zoom).toHaveText('125%');
   await page.keyboard.press('0');
   await expect(zoom).toHaveText('100%');
+  await expect(viewport).toHaveCSS('outline-style', 'none');
+  await expect(viewport).toHaveCSS('border-top-width', '1px');
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(original);
@@ -463,6 +472,8 @@ test('Mermaid expands into a resizable dialog and restores the inline view witho
   await expect(dialog).toBeVisible();
   await expectCompactHeader();
   await expect(expandedViewport).toBeFocused();
+  await expect(expandedViewport).toHaveCSS('outline-style', 'none');
+  await expect(expandedViewport).toHaveCSS('border-top-width', '1px');
   if (process.platform === 'darwin') {
     const titlebar = (await page.locator('.titlebar').boundingBox())!;
     expect((await dialog.boundingBox())!.y).toBeGreaterThanOrEqual(titlebar.y + titlebar.height);
@@ -471,7 +482,7 @@ test('Mermaid expands into a resizable dialog and restores the inline view witho
   const expandedBounds = (await expandedViewport.boundingBox())!;
   expect(expandedBounds.width).toBeGreaterThan(bounds.width);
   expect(expandedBounds.height).toBeGreaterThan(bounds.height);
-  await expect(dialog.locator('svg')).toContainText('Stage 13');
+  await expect(dialog.locator('.diagram-canvas > svg')).toContainText('Stage 13');
   expect(await page.locator('svg[id]').evaluateAll(elements => {
     const ids = elements.flatMap(svg => [svg.id, ...Array.from(svg.querySelectorAll('[id]'), element => element.id)]);
     return new Set(ids).size === ids.length;
@@ -502,7 +513,7 @@ test('Mermaid expands into a resizable dialog and restores the inline view witho
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(expand).toBeFocused();
-  await expect(inline.locator('svg')).toContainText('Stage 13');
+  await expect(inline.locator('.diagram-canvas > svg')).toContainText('Stage 13');
   // The resize refits both canvases, so capture the new inline position before reopening.
   await inline.getByRole('button', { name: 'Zoom in diagram', exact: true }).click();
   const restoredTransform = await inline.locator('.diagram-canvas').evaluate(element => element.style.transform);
@@ -624,6 +635,7 @@ test('document links resolve from the current document and preserve open drafts'
 
 test('heading links scroll within an unsaved document, including duplicate and Unicode headings', async () => {
   await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New Markdown document', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   const filler = Array.from({ length: 24 }, (_, i) => `Paragraph ${i}.\n\n`).join('');
@@ -981,6 +993,7 @@ test('new documents and later edits both require explicit Save', async () => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, target);
   await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New Markdown document', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   const source = page.getByRole('textbox', { name: 'Markdown source' });
@@ -1473,6 +1486,7 @@ test('Save in the unsaved-changes dialog writes the current file before closing 
 
 test('canceled and failed Save As keep the pending switch and unsaved text intact', async () => {
   await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New Markdown document', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# New draft to keep\n');
@@ -1580,6 +1594,7 @@ test('closing an untitled document waits for Save As before closing the window',
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, target);
   await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New Markdown document', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Untitled.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Saved on close\n');
@@ -2396,6 +2411,7 @@ test('find seeds selected text and updates across tabs and editor views', async 
   await page.getByRole('tab', { name: 'Visual', exact: true }).click();
   await expect(page.locator('.document-editor .find-match')).toHaveCount(2);
   await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New Markdown document', exact: true }).click();
   await expect(search.getByRole('status')).toHaveText('No matches');
   await expect(page.locator('.document-editor .find-match')).toHaveCount(0);
   await page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true }).click();
@@ -2427,4 +2443,482 @@ test('find reveals distant matches in source files and keeps replacement local t
   await expect.poll(() => source.evaluate(element => element.scrollLeft)).toBeLessThan(100);
   await query.press('Escape');
   expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('M45 control structures edit simple source, preserve YAML, and restore after restart', async () => {
+  const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-control-structure.yaml'), 'utf8');
+  const target = path.join(directory, 'vigil.yaml');
+  await writeFile(target, content);
+  await page.evaluate(() => window.slate!.openFile('vigil.yaml'));
+  await expect(page.getByRole('tab', { name: 'Visual', exact: true })).toHaveAttribute('data-state', 'active');
+  let input = page.getByRole('textbox', { name: 'Control structure source', exact: true, includeHidden: true });
+  await expect(input).toHaveValue(/Imagery user \(controller\) -> Mission operations/);
+  await expect(input).not.toBeVisible();
+  await expect(page.getByRole('group', { name: 'Control structure diagram', exact: true })).toBeVisible();
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+  await writeFile('tmp/control-preview.svg', await page.locator('.control-preview .diagram-canvas > svg').evaluate(element => element.outerHTML));
+  await page.screenshot({ path: 'tmp/control-structure-editor.png' });
+  await expect(page.locator('.control-preview svg .node')).toHaveCount(9);
+  await page.keyboard.press('ControlOrMeta+f');
+  await expect(page.getByRole('tab', { name: 'Source', exact: true })).toHaveAttribute('data-state', 'active');
+  await expect(input).toBeVisible();
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('Permission decision');
+  await expect(page.getByRole('search', { name: 'Find in document' }).getByRole('status')).toHaveText('1 of 1');
+  await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(input).not.toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Inspect component or connection' })).toHaveCount(0);
+  await expect(page.locator('.control-details')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
+  await expect(page.locator('.control-details')).toContainText('Health measurement time and validity');
+  await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Component name' }).fill('Onboard controller');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(input).toHaveValue(/Onboard controller process model:/);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(input).toHaveValue(/Onboard activity control process model:/);
+  const source = await input.inputValue();
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await expect(input).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Control structure diagram', exact: true })).not.toBeVisible();
+  await input.fill(source.replace('Target, deadline, and image acceptance criteria', 'Revised acquisition request'));
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => readFile(target, 'utf8')).toContain('Revised acquisition request');
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  const saved = await readFile(target, 'utf8');
+  expect(saved).toContain('id: cs-vigil1-10');
+  expect(saved).toContain('description:');
+  await input.fill(source + '\nBroken ->');
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(page.locator('.control-diagnostics')).toContainText('Add a colon');
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(input).not.toBeVisible();
+  await expect(page.getByText('Correct the highlighted source to update the diagram.', { exact: false })).toBeVisible();
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  expect(await readFile(target, 'utf8')).toBe(saved);
+  await input.fill(source.replace('Target, deadline, and image acceptance criteria', 'Revised acquisition request'));
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await restart();
+  input = page.getByRole('textbox', { name: 'Control structure source', exact: true, includeHidden: true });
+  await expect(input).toHaveValue(/Revised acquisition request/);
+  await expect(page.getByRole('group', { name: 'Control structure diagram', exact: true })).toBeVisible();
+  await page.screenshot({ path: 'tmp/control-structure-editor.png' });
+});
+
+test('control structure Markdown fences render safely and retain their simple source', async () => {
+  const source = '# Control loop\n\n```control-structure\nPilot (controller) -> Hoist (actuator): Raise\nHoist -> Pilot: State [feedback]\n```\n';
+  await page.evaluate(text => window.slate!.newDocument({ name: 'loop.md', content: text }), source);
+  await expect(page.getByRole('img', { name: 'Control structure diagram' })).toBeVisible();
+  await expect(page.locator('.control-block .control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source', exact: true })).toHaveValue(source);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'Control structure diagram' })).toBeVisible();
+  const pdf = path.join(directory, 'control-loop.pdf');
+  await application.evaluate(({ dialog }, target) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: target }); }, pdf);
+  await page.getByRole('button', { name: 'Export PDF', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: `PDF saved to ${pdf}` })).toBeVisible({ timeout: 30_000 });
+  expect((await readFile(pdf)).subarray(0, 5).toString()).toBe('%PDF-');
+});
+
+test('new M45 YAML structures support adding and deleting through the diagram toolbar', async () => {
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New control structure', exact: true }).click();
+  await expect(page.getByRole('tab', { name: /^Untitled\.yaml(?:, unsaved changes)?$/ })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Source', exact: true })).toHaveAttribute('data-state', 'active');
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Control structure source', exact: true, includeHidden: true });
+  await expect(source).toHaveValue(/Pilot \(controller\)/);
+  await page.getByRole('button', { name: 'Add component', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Component name' }).fill('Monitor');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(source).toHaveValue(/Monitor \(controller\)/);
+  await page.getByRole('button', { name: 'Add connection', exact: true }).click();
+  const from = page.getByRole('combobox', { name: 'From component', exact: true });
+  await from.focus();
+  await expect(from).toHaveCSS('border-top-width', '0px');
+  await expect(from).toHaveCSS('outline-style', 'none');
+  await expect(from.locator('..').locator('svg')).toBeVisible();
+  await page.screenshot({ path: 'tmp/control-borderless-select.png' });
+  await page.getByRole('combobox', { name: 'From component', exact: true }).selectOption({ label: 'Monitor' });
+  await page.getByRole('combobox', { name: 'To component', exact: true }).selectOption({ label: 'Pilot' });
+  await page.getByRole('textbox', { name: 'Connection label' }).fill('Restriction');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(source).toHaveValue(/Monitor -> Pilot: Restriction/);
+  await page.getByRole('button', { name: 'Select connection Monitor → Pilot: Restriction', exact: true }).click();
+  await expect(page.locator('.control-details')).toContainText('Monitor → Pilot');
+  await page.getByRole('button', { name: 'Delete connection', exact: true }).click();
+  await expect(source).not.toHaveValue(/Monitor -> Pilot/);
+  await expect(source).toHaveValue(/Monitor \(controller\)/);
+  const target = path.join(directory, 'new.yaml');
+  await application.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, target);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => readFile(target, 'utf8').catch(error => { if (error.code === 'ENOENT') return ''; throw error; })).toContain('Monitor (controller)');
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(page.getByRole('tab', { name: 'new.yaml', exact: true })).toBeVisible();
+  const { parse } = await import('yaml');
+  const saved = parse(await readFile(target, 'utf8'));
+  expect(saved.schemaVersion).toBe('m45-control-structure/v1');
+  expect(saved.metadata.authoring.source).toContain('Monitor (controller)');
+  expect(saved.elements.some((element: { label: string }) => element.label === 'Monitor')).toBe(true);
+  await expect(page.getByRole('tab', { name: 'new.yaml', exact: true }).locator('.unsaved-dot')).toHaveCount(0);
+  await restart();
+  await expect(page.getByRole('button', { name: 'Select component Monitor', exact: true })).toBeVisible();
+});
+
+
+test('control diagram selects parallel arrows by click or keyboard without retaining the Inspect row', async () => {
+  const content = 'Pilot (controller) -> Hoist (actuator): Raise\nPilot -> Hoist: Stop\nHoist -> Pilot: State [feedback]\n';
+  await page.evaluate(text => window.slate!.newDocument({ name: 'arrows.yaml', content: text }), controlDocument(content));
+  const source = page.getByRole('textbox', { name: 'Control structure source', includeHidden: true });
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+  await expect(page.getByRole('combobox', { name: 'Inspect component or connection' })).toHaveCount(0);
+  await expect(page.locator('.control-details')).toHaveCount(0);
+  const raise = page.getByRole('button', { name: 'Select connection Pilot → Hoist: Raise', exact: true });
+  const stop = page.getByRole('button', { name: 'Select connection Pilot → Hoist: Stop', exact: true });
+  await raise.focus();
+  await raise.press('Enter');
+  await expect(raise).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.control-details')).toContainText('Raise');
+  await expect(source).toHaveValue(content);
+  const stopId = await stop.getAttribute('data-diagram-id');
+  const hit = page.locator(`.control-connection-hit[data-diagram-id="${stopId}"]`);
+  const point = await hit.evaluate((element: SVGPathElement) => {
+    const point = element.getPointAtLength(element.getTotalLength() * 0.2);
+    const screen = new DOMPoint(point.x, point.y).matrixTransform(element.getScreenCTM()!);
+    return { x: screen.x, y: screen.y };
+  });
+  await page.mouse.click(point.x, point.y);
+  await expect(stop).toHaveAttribute('aria-pressed', 'true');
+  await expect(raise).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.control-details')).toContainText('Stop');
+  await page.getByRole('button', { name: 'Delete connection', exact: true }).click();
+  await expect(source).toHaveValue(content.replace('Pilot -> Hoist: Stop\n', ''));
+  await expect(page.locator('.control-details')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Select component Pilot', exact: true }).click();
+  await expect(page.locator('.control-details')).toContainText('Pilot');
+  await page.getByRole('button', { name: 'Clear diagram selection', exact: true }).click();
+  await expect(page.locator('.control-details')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Select component Pilot', exact: true }).focus();
+  await page.keyboard.press('Space');
+  await expect(page.locator('.control-details')).toContainText('Pilot');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.control-details')).toHaveCount(0);
+  const pilot = page.getByRole('button', { name: 'Select component Pilot', exact: true });
+  const bounds = (await pilot.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 + 30, bounds.y + bounds.height / 2 + 30, { steps: 4 });
+  await page.mouse.up();
+  await expect(page.locator('.control-details')).toHaveCount(0);
+  await pilot.click();
+  await page.getByRole('group', { name: 'Diagram canvas', exact: true }).click({ position: { x: 6, y: 6 } });
+  await expect(page.locator('.control-details')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Expand control structure', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Select component Pilot', exact: true }).click();
+  await page.getByRole('button', { name: 'Collapse control structure', exact: true }).click();
+  await expect(page.locator('.control-details')).toContainText('Pilot');
+  await page.getByRole('button', { name: 'Clear diagram selection', exact: true }).click();
+  await page.screenshot({ path: 'tmp/control-without-inspect.png' });
+});
+
+test('control structure canvas fills the available height and responds to window and detail changes', async () => {
+  await page.setViewportSize({ width: 1120, height: 1100 });
+  const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-control-structure.yaml'), 'utf8');
+  await page.evaluate(text => window.slate!.newDocument({ name: 'height.yaml', content: text }), content);
+  const viewport = page.locator('.control-diagram .diagram-viewport');
+  const legend = page.locator('.control-legend');
+  const editorArea = page.locator('.document-scroll');
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+  await expect.poll(async () => (await viewport.boundingBox())!.height).toBeGreaterThan(650);
+  await expect(page.locator('.control-diagram > .control-pane-heading')).toHaveCount(0);
+  const initial = (await viewport.boundingBox())!.height;
+  async function expectFilled() {
+    await expect.poll(async () => {
+      const canvas = (await viewport.boundingBox())!;
+      const key = (await legend.boundingBox())!;
+      return Math.abs(canvas.y + canvas.height - key.y);
+    }).toBeLessThan(3);
+    await expect.poll(() => editorArea.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThan(3);
+  }
+  await expectFilled();
+  await page.setViewportSize({ width: 1120, height: 1320 });
+  await expect.poll(async () => (await viewport.boundingBox())!.height - initial).toBeGreaterThan(210);
+  await expectFilled();
+  await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
+  await expect(page.locator('.control-details')).toBeVisible();
+  await expect.poll(() => editorArea.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThan(3);
+  await expect.poll(async () => (await page.locator('.control-details').boundingBox())!.height).toBeLessThanOrEqual(240);
+  await page.getByRole('button', { name: 'Clear diagram selection', exact: true }).click();
+  await expectFilled();
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Control structure source', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expectFilled();
+  await page.setViewportSize({ width: 1120, height: 760 });
+  await expectFilled();
+  await page.screenshot({ path: 'tmp/control-full-height.png' });
+});
+
+test('control nodes separate role badges from names and emphasize their own rounded borders', async () => {
+  const content = 'Mission operations (controller) -> Payload (process): Acquire\n';
+  await page.evaluate(text => window.slate!.newDocument({ name: 'roles.yaml', content: text }), controlDocument(content));
+  const controller = page.getByRole('button', { name: 'Select component Mission operations', exact: true });
+  const process = page.getByRole('button', { name: 'Select component Payload', exact: true });
+  await expect(controller.locator('.control-node-role')).toHaveText('CONTROLLER');
+  await expect(controller.locator('.control-node-name')).toHaveText('Mission operations');
+  await expect(process.locator('.control-node-role')).toHaveText('PROCESS');
+  const role = controller.locator('.control-node-role');
+  const name = controller.locator('.control-node-name');
+  expect(await role.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeLessThan(await name.evaluate(el => parseFloat(getComputedStyle(el).fontSize)));
+  const roleBox = (await role.boundingBox())!;
+  const nameBox = (await name.boundingBox())!;
+  expect(roleBox.y + roleBox.height).toBeLessThan(nameBox.y);
+  const controllerBorder = controller.locator(':scope > rect');
+  const color = await controllerBorder.evaluate(el => getComputedStyle(el).stroke);
+  await controller.click();
+  await expect(controllerBorder).toHaveCSS('stroke', color);
+  await expect(controllerBorder).toHaveCSS('stroke-width', '4px');
+  await expect(controller).toHaveCSS('outline-style', 'none');
+  await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Component name', exact: true })).toHaveValue('Mission operations');
+  await page.screenshot({ path: 'tmp/control-role-and-rename.png' });
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const processBorder = process.locator(':scope > rect');
+  const processColor = await processBorder.evaluate(el => getComputedStyle(el).stroke);
+  await process.click();
+  await expect(controllerBorder).toHaveCSS('stroke-width', '2px');
+  await expect(processBorder).toHaveCSS('stroke', processColor);
+  await expect(processBorder).toHaveCSS('stroke-width', '4px');
+  expect(processColor).not.toBe(color);
+  await page.getByRole('button', { name: 'Clear diagram selection', exact: true }).click();
+  await expect(processBorder).toHaveCSS('stroke-width', '2px');
+  expect(await sourceText()).toBe(content);
+  async function sourceText() { return page.getByRole('textbox', { name: 'Control structure source', includeHidden: true }).inputValue(); }
+});
+
+test('control components delete with confirmation and undo restores connections and controller details', async () => {
+  const content = 'Pilot (controller) -> Hoist (actuator): Raise\nHoist -> Pilot: State [feedback]\nPilot process model:\n  Load position\n';
+  await page.evaluate(text => window.slate!.newDocument({ name: 'delete.yaml', content: text }), controlDocument(content));
+  const source = page.getByRole('textbox', { name: 'Control structure source', includeHidden: true });
+  const pilot = page.getByRole('button', { name: 'Select component Pilot', exact: true });
+  await pilot.click();
+  await page.getByRole('button', { name: 'Delete component', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('2 connections');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(source).toHaveValue(content);
+  await page.getByRole('button', { name: 'Delete component', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(source).toHaveValue('Hoist (actuator)\n');
+  await expect(pilot).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(source).toHaveValue(content);
+  await expect(pilot).toBeVisible();
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(pilot).toHaveCount(0);
+});
+
+for (const format of ['json', 'yaml']) test(`control layout drags, saves, restarts and auto-arranges ${format} files`, async () => {
+  const content = format === 'yaml' ? await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-control-structure.yaml'), 'utf8') : controlDocument('Pilot (controller) -> Hoist (actuator): Raise\nHoist -> Pilot: State [feedback]\n', 'json');
+  const target = path.join(directory, `layout.${format}`);
+  await writeFile(target, content);
+  await page.evaluate(name => window.slate!.openFile(name), `layout.${format}`);
+  let source = page.getByRole('textbox', { name: 'Control structure source', includeHidden: true });
+  const name = format === 'yaml' ? 'Imagery user' : 'Pilot';
+  let node = page.getByRole('button', { name: `Select component ${name}`, exact: true });
+  await expect(node).toBeVisible();
+  const original = await source.inputValue();
+  const initial = await node.getAttribute('transform');
+  const id = await node.getAttribute('data-diagram-id');
+  const untouched = page.locator(`.control-connection:not([data-source-id="${id}"]):not([data-target-id="${id}"])`);
+  const unchangedPaths = await untouched.evaluateAll(paths => paths.map(p => p.getAttribute('d')));
+  const box = (await node.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 100, box.y + box.height / 2 + 35, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByRole('button', { name: 'Auto-arrange', exact: true })).toBeEnabled();
+  await expect(node).not.toHaveAttribute('transform', initial!);
+  await expect(source).toHaveValue(original);
+  const moved = await node.getAttribute('transform');
+  // Every incident arrow endpoint must remain on its component's outline.
+  const errors = await page.locator('.control-preview .diagram-canvas > svg').evaluate((svg: SVGSVGElement, id) => {
+    const node = svg.querySelector<SVGGElement>(`.control-component[data-diagram-id="${id}"]`)!;
+    const bounds = node.getBoundingClientRect();
+    return [...svg.querySelectorAll<SVGPathElement>('.control-connection')].filter(p => p.dataset.sourceId === id || p.dataset.targetId === id).map(p => {
+      const point = p.getPointAtLength(p.dataset.sourceId === id ? 0 : p.getTotalLength());
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(p.getScreenCTM()!);
+      return Math.min(Math.abs(screen.x - bounds.x), Math.abs(screen.x - bounds.right), Math.abs(screen.y - bounds.y), Math.abs(screen.y - bounds.bottom));
+    });
+  }, id);
+  expect(Math.max(...errors)).toBeLessThan(12);
+  expect(await untouched.evaluateAll(paths => paths.map(p => p.getAttribute('d')))).toEqual(unchangedPaths);
+  const routes = await page.locator(`.control-connection[data-source-id="${id}"], .control-connection[data-target-id="${id}"]`).evaluateAll(paths => paths.map(path => path.getAttribute('d')!));
+  for (const route of routes) {
+    expect(route).not.toMatch(/[CQSA]/i);
+    const values = route.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+    for (let i = 2; i < values.length; i += 2) {
+      expect(Math.min(Math.abs(values[i] - values[i - 2]), Math.abs(values[i + 1] - values[i - 1]))).toBeLessThan(0.001);
+    }
+  }
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Auto-arrange', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(node).toHaveAttribute('transform', moved!);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('tablist', { name: 'Open documents' }).getByRole('tab', { selected: true }).locator('.unsaved-dot')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await restart();
+  node = page.getByRole('button', { name: `Select component ${name}`, exact: true });
+  source = page.getByRole('textbox', { name: 'Control structure source', includeHidden: true });
+  await expect(node).toHaveAttribute('transform', moved!);
+  await expect(source).toHaveValue(original);
+  await page.getByRole('button', { name: 'Expand control structure', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('button', { name: `Select component ${name}`, exact: true })).toHaveAttribute('transform', moved!);
+  await page.getByRole('button', { name: 'Collapse control structure', exact: true }).click();
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(node).toHaveAttribute('transform', moved!);
+  await page.getByRole('button', { name: 'Auto-arrange', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Auto-arrange', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(node).toHaveAttribute('transform', moved!);
+  await page.screenshot({ path: `tmp/control-layout-${format}.png` });
+});
+
+test('control toolbar uses compact Lucide icons with accessible names and shadcn tooltips', async () => {
+  await page.evaluate(content => window.slate!.newDocument({ name: 'icons.yaml', content }), controlDocument('Pilot (controller) -> Hoist (actuator): Raise\n'));
+  const toolbar = page.locator('.control-toolbar');
+  for (const name of ['Add component', 'Add connection', 'Rename', 'Delete selection', 'Auto-arrange', 'Undo', 'Redo', 'Syntax help']) {
+    const button = toolbar.getByRole('button', { name, exact: true });
+    await expect(button.locator('svg.lucide')).toHaveCount(1);
+    await expect(button).toHaveText('');
+    const box = (await button.boundingBox())!;
+    expect(box.width).toBe(32);
+  }
+  await toolbar.getByRole('button', { name: 'Add component', exact: true }).hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Add component');
+  await toolbar.getByRole('button', { name: 'Undo', exact: true }).locator('..').hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Undo · ⌘ / Ctrl Z');
+  await toolbar.getByRole('button', { name: 'Delete selection', exact: true }).locator('..').hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Select a component or connection to delete');
+  await page.getByRole('button', { name: 'Zoom in diagram', exact: true }).hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Zoom in diagram');
+  await page.mouse.move(5, 5);
+  await page.screenshot({ path: 'tmp/control-icon-toolbar.png' });
+});
+
+test('expanded control structures retain editing, source switching, save, and undo', async () => {
+  const content = 'Pilot (controller) -> Hoist (actuator): Raise\nHoist -> Pilot: State [feedback]\n';
+  const target = path.join(directory, 'expanded.yaml');
+  await writeFile(target, controlDocument(content));
+  await page.evaluate(() => window.slate!.openFile('expanded.yaml'));
+  await page.getByRole('button', { name: 'Expand control structure', exact: true }).click();
+  const expanded = page.getByRole('dialog', { name: 'Control structure editor', exact: true });
+  await expect(expanded).toBeVisible();
+  await expect(expanded.getByText('Live preview', { exact: true })).toHaveCount(0);
+  for (const name of ['Add component', 'Add connection', 'Rename', 'Delete selection', 'Auto-arrange', 'Undo', 'Redo', 'Save', 'Syntax help']) {
+    await expect(expanded.getByRole('button', { name, exact: true })).toBeVisible();
+  }
+  await expanded.getByRole('button', { name: 'Add component', exact: true }).click();
+  const add = page.getByRole('dialog', { name: 'Add component', exact: true });
+  await add.getByRole('textbox', { name: 'Component name' }).fill('Observer');
+  await add.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(expanded.getByRole('button', { name: 'Select component Observer', exact: true })).toBeVisible();
+  await expanded.getByRole('button', { name: 'Select component Observer', exact: true }).click();
+  await expanded.getByRole('button', { name: 'Rename', exact: true }).click();
+  const rename = page.getByRole('dialog', { name: 'Rename component', exact: true });
+  await rename.getByRole('textbox', { name: 'Component name' }).fill('Monitor');
+  await rename.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(expanded.getByRole('button', { name: 'Select component Monitor', exact: true })).toBeVisible();
+  await expanded.getByRole('button', { name: 'Select component Monitor', exact: true }).click();
+  await expanded.getByRole('button', { name: 'Delete component', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Delete component', exact: true }).getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(expanded.getByRole('button', { name: 'Select component Monitor', exact: true })).toHaveCount(0);
+  await expanded.getByRole('group', { name: 'Diagram canvas', exact: true }).focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(expanded.getByRole('button', { name: 'Select component Monitor', exact: true })).toBeVisible();
+  await expanded.getByRole('tab', { name: 'Source', exact: true }).click();
+  const source = expanded.getByRole('textbox', { name: 'Control structure source' });
+  await expect(source).toHaveValue(/Monitor \(controller\)/);
+  await source.fill((await source.inputValue()) + '# Edited while expanded\n');
+  await expanded.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => readFile(target, 'utf8')).toContain('# Edited while expanded');
+  await expect(page.getByRole('tablist', { name: 'Open documents', includeHidden: true }).getByRole('tab', { selected: true, includeHidden: true }).locator('.unsaved-dot')).toHaveCount(0);
+  await expanded.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expanded.getByRole('button', { name: 'Syntax help', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'M45 control structure syntax', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(expanded).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'M45 control structure syntax', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: 'tmp/control-expanded-editor.png' });
+  await expanded.getByRole('button', { name: 'Collapse control structure', exact: true }).click();
+  await expect(expanded).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Select component Monitor', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Expand control structure', exact: true }).click();
+  await expanded.getByRole('group', { name: 'Diagram canvas', exact: true }).focus();
+  await page.keyboard.press('Escape');
+  await expect(expanded).toHaveCount(0);
+});
+
+test('txt files containing control syntax remain ordinary text', async () => {
+  const content = 'Pilot (controller) -> Hoist (actuator): Raise\nHoist -> Pilot: State [feedback]\n';
+  const target = path.join(directory, 'notes.txt');
+  await writeFile(target, content);
+  await page.evaluate(() => window.slate!.openFile('notes.txt'));
+  const source = page.getByRole('textbox', { name: 'Source editor', exact: true });
+  await expect(source).toHaveValue(content);
+  await expect(page.getByRole('tab', { name: 'Visual', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Control structure source', exact: true })).toHaveCount(0);
+  await source.fill(content + 'Pilot (');
+  await expect(source).toBeVisible();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => readFile(target, 'utf8')).toBe(content + 'Pilot (');
+  await expect(page.getByRole('tab', { name: 'notes.txt', exact: true }).locator('.unsaved-dot')).toHaveCount(0);
+  await restart();
+  await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue(content + 'Pilot (');
+  await expect(page.getByRole('tab', { name: 'Visual', exact: true })).toHaveCount(0);
+});
+
+test('folder New File creates an M45 YAML structure in the selected folder', async () => {
+  await mkdir(path.join(directory, 'structures'));
+  await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
+  await page.getByRole('button', { name: 'structures', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'New File…', exact: true }).click();
+  let dialog = page.getByRole('dialog', { name: 'New File', exact: true });
+  await dialog.getByRole('combobox', { name: 'File template' }).selectOption('control');
+  await expect(dialog.getByRole('textbox', { name: 'File name', exact: true })).toHaveValue('Untitled.yaml');
+  await dialog.getByRole('textbox', { name: 'File name', exact: true }).fill('hoist.yaml');
+  await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Control structure source', exact: true })).toHaveValue(/Pilot \(controller\)/);
+  await expect(page.getByRole('tab', { name: 'Source', exact: true })).toHaveAttribute('data-state', 'active');
+  expect(await readFile(path.join(directory, 'structures/hoist.yaml'), 'utf8')).toContain('Pilot (controller)');
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'structures', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'New control structure…', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'New File', exact: true });
+  await expect(dialog.getByRole('combobox', { name: 'File template' })).toHaveValue('control');
+  await dialog.getByRole('textbox', { name: 'File name', exact: true }).fill('hoist.yaml');
+  await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('already exists');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'New file', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'New File', exact: true });
+  await dialog.getByRole('combobox', { name: 'File template' }).selectOption('control');
+  await dialog.getByRole('textbox', { name: 'File name', exact: true }).fill('root.json');
+  await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Control structure source', exact: true })).toBeVisible();
+  const saved = JSON.parse(await readFile(path.join(directory, 'root.json'), 'utf8'));
+  expect(saved.schemaVersion).toBe('m45-control-structure/v1');
+  expect(saved.metadata.authoring.source).toContain('Pilot (controller)');
+  expect(saved.title).toBe('root');
+});
+
+test('native New Control Structure creates an unsaved YAML source tab', async () => {
+  await application.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('new-control-structure')!.click());
+  await expect(page.getByRole('tab', { name: /^Untitled\.yaml(?:, unsaved changes)?$/ })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Source', exact: true })).toHaveAttribute('data-state', 'active');
+  await expect(page.getByRole('textbox', { name: 'Control structure source', exact: true })).toHaveValue(/Pilot \(controller\)/);
 });

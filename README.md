@@ -12,7 +12,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-0.1.7-mac-arm64.dmg` from the [v0.1.7 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.7). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-0.1.8-mac-arm64.dmg` from the [v0.1.8 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.8). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -22,13 +22,13 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-0.1.7-win-x64.exe` from the [v0.1.7 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.7) for a standard Intel/AMD PC.
+1. Download `Slate-0.1.8-win-x64.exe` from the [v0.1.8 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.8) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Download both installers from the [v0.1.7 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.7). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
+Download both installers from the [v0.1.8 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.8). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
 
 ## Features
 
@@ -56,6 +56,32 @@ Download both installers from the [v0.1.7 release](https://github.com/m45-engine
 - Detection of changes made by other editors, with Reload and Save a copy actions.
 - Bundled Geist Sans and Geist Mono; no font downloads or server at runtime.
 - A local recovery draft for unsaved edits. This is a convenience, not a backup system.
+
+## Control structures
+
+Open an M45 control structure YAML or JSON file to use **Visual** view for the diagram. Switch to **Source** to edit the same simple syntax as M45. These are separate views, like Visual and Markdown for a Markdown document. The file on disk stays YAML or JSON. Save updates the structured graph and authored source together, preserving existing record IDs and unrelated fields. Invalid edits keep the last valid preview and remain in recovery drafts until corrected; they cannot be saved as a canonical structure.
+
+For a new structure, choose **New → New control structure**. It opens in **Source**, where you write M45’s simple syntax. Save creates one `.yaml` file containing the written source, graph, and layout, matching M45’s document format. No separate text file is needed. Control structures use `.yaml`, `.yml`, or `.json`; `.txt` files remain ordinary text. To create it directly in a folder, right-click that folder and choose **New File… → Template: Control structure (M45)**, or **New control structure…**. The sidebar’s New file button offers the same template at the workspace root. These actions create a `.yaml` file in the chosen folder immediately (you can also name it `.yml` or `.json`); the top New menu creates an unsaved tab and Save asks for its destination.
+
+A minimal example:
+
+```text
+Pilot (controller) -> Hoist (actuator): Raise / lower / stop
+Hoist -> Pilot: Operating state [feedback]
+
+Pilot process model:
+  Cable motion
+  Load position
+
+Pilot control algorithm:
+  Stop when the operator releases the command.
+```
+
+Roles are `controller`, `process`, `sensor`, and `actuator`. Connections default to control; other suffixes are `[feedback]`, `[information]`, and `[effect]`. Use `Sensor measures Process` for an observation. Quote names or labels containing reserved punctuation, and indent controller details consistently. **Syntax help** includes an example.
+
+Boxes show the role in a small uppercase badge above the component name. Selecting a box thickens its existing border without changing its role color. Click a diagram box to inspect its controller details. Switch to Source to edit the simple text; a controller-detail heading jumps to its source. Click a box or arrow directly to select it for renaming or deletion; its details appear only while selected. Click empty canvas space or press Escape to clear the selection. Add components or connections from the toolbar. Drag boxes to arrange them; arrows follow their endpoints. Drag the background to pan or scroll to zoom. Expand opens the entire control-structure editor with its editing toolbar, Visual/Source switch, and Save; collapse returns to the document without losing edits. **Auto-arrange** restores the automatic layout. Component deletion confirms removal of its incident connections and controller details; Undo restores deletions and layout changes. Save persists box positions in the M45 document’s `views` field. Individual connector routing remains automatic.
+
+Markdown documents can embed the same text inside a `control-structure` fenced block. Visual view and PDF exports render the diagram; edit its text in Markdown view. Files whose graph disagrees with their stored source, unsupported grammar versions, and files without M45 authored text stay in Source view with an explanation.
 
 ## Run with pnpm
 

@@ -1,6 +1,7 @@
 const fs = require('node:fs/promises');
 const { constants } = require('node:fs');
 const path = require('node:path');
+const { MAX_BYTES } = require('./file-store.cjs');
 const { isTextFile } = require('./file-types.cjs');
 
 const HIDDEN_DIRECTORIES = new Set(['.git', 'node_modules', '.next', '.venv', '__pycache__']);
@@ -139,8 +140,10 @@ class FolderStore {
     return { from, to: null };
   }
 
-  async create(parentPath, name, kind) {
+  async create(parentPath, name, kind, content = '') {
     validateName(name);
+    if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > MAX_BYTES || content.includes('\0')) throw new Error('Invalid initial file content.');
+    if (kind === 'directory' && content) throw new Error('A folder cannot have file content.');
     if (kind !== 'file' && kind !== 'directory') throw new Error('Choose a file or folder.');
     if (kind === 'file' && !isTextFile(name)) throw new Error('Use a supported text or code extension, such as .md, .txt, or .ts.');
     const parent = await this.resolve(parentPath);
@@ -148,7 +151,7 @@ class FolderStore {
     const absolute = path.join(parent, name);
     try {
       if (kind === 'directory') await fs.mkdir(absolute);
-      else await fs.writeFile(absolute, '', { flag: 'wx', mode: 0o600 });
+      else await fs.writeFile(absolute, content, { flag: 'wx', mode: 0o600 });
     } catch (error) {
       if (error.code === 'EEXIST') throw new Error('A file or folder with that name already exists. Nothing was replaced.');
       throw error;
