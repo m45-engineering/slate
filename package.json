@@ -1,6 +1,6 @@
 {
   "name": "slate-desktop",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
@@ -52,7 +52,8 @@
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-resizable-panels": "^4.21.0",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",

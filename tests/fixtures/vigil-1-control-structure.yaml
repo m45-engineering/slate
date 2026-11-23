@@ -1,0 +1,551 @@
+schemaVersion: m45-control-structure/v1
+id: vigil-1-control-structure
+title: Vigil-1 — acquisition and delivery control structure
+description: "Control responsibilities for Vigil-1 SAR acquisition and delivery. Source records: V1-PROTECTION revision 3 (03-protection-model.md) and V1-ALLOCATION revision 3 (05-design-allocation.md)."
+elements:
+  - id: cs-vigil1-1
+    label: Imagery user
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-2
+    label: Mission operations
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-3
+    label: Onboard activity control
+    kind: controller
+    annotations:
+      authoringDetails:
+        version: 1
+        processModel:
+          id: cs-vigil1-52
+          variables:
+            - id: cs-vigil1-53
+              text: Current acquisition plan and operating limits
+            - id: cs-vigil1-54
+              text: Health measurement time and validity
+            - id: cs-vigil1-55
+              text: Capability for the requested maneuver and acquisition
+            - id: cs-vigil1-56
+              text: Current attitude, power, and thermal state
+        controlAlgorithm:
+          id: cs-vigil1-57
+          text: |-
+            Apply CON-01 before each maneuver and SAR acquisition, including scheduled, direct, and recovery commands.
+            Require valid health information no more than two seconds old, the required attitude capability, and compliance with power and thermal limits.
+            Monitor applicable limits during the activity. Restrict the activity if permission is lost and report the reason to mission operations.
+      authoringUnclassified: false
+  - id: cs-vigil1-4
+    label: SC
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-5
+    label: Health assessment
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-6
+    label: Attitude control
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-7
+    label: SAR payload
+    kind: controlled_process
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-8
+    label: Dedicated ground station
+    kind: controlled_process
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-9
+    label: Dedicated ground product processing
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+relationships:
+  - id: cs-vigil1-10
+    label: Target, deadline, and image acceptance criteria
+    kind: control_action
+    sourceId: cs-vigil1-1
+    targetId: cs-vigil1-2
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-12
+    label: Request disposition and predicted delivery
+    kind: feedback
+    sourceId: cs-vigil1-2
+    targetId: cs-vigil1-1
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-14
+    label: Acquisition plan and operating limits
+    kind: control_action
+    sourceId: cs-vigil1-2
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-16
+    label: Stored command sequences and timing
+    kind: control_action
+    sourceId: cs-vigil1-2
+    targetId: cs-vigil1-4
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-18
+    label: Scheduled and protective commands
+    kind: control_action
+    sourceId: cs-vigil1-4
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-20
+    label: Protective sequence request
+    kind: control_action
+    sourceId: cs-vigil1-5
+    targetId: cs-vigil1-4
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-22
+    label: Equipment capability, measurement time, and validity
+    kind: feedback
+    sourceId: cs-vigil1-5
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-24
+    label: Data receipt and validity faults
+    kind: feedback
+    sourceId: cs-vigil1-3
+    targetId: cs-vigil1-5
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-26
+    label: Permitted maneuver and required attitude
+    kind: control_action
+    sourceId: cs-vigil1-3
+    targetId: cs-vigil1-6
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-28
+    label: Attitude, wheel state, and capability
+    kind: feedback
+    sourceId: cs-vigil1-6
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-30
+    label: Permitted acquisition or restriction
+    kind: control_action
+    sourceId: cs-vigil1-3
+    targetId: cs-vigil1-7
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-32
+    label: Acquisition progress, completion, or interruption
+    kind: feedback
+    sourceId: cs-vigil1-7
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-34
+    label: Reserved contact and expected data volume
+    kind: control_action
+    sourceId: cs-vigil1-2
+    targetId: cs-vigil1-8
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-36
+    label: Contact availability and reception status
+    kind: feedback
+    sourceId: cs-vigil1-8
+    targetId: cs-vigil1-2
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-38
+    label: Processing priority, capacity allocation, and acceptance criteria
+    kind: control_action
+    sourceId: cs-vigil1-2
+    targetId: cs-vigil1-9
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-40
+    label: Acquisition data and context
+    kind: data_flow
+    sourceId: cs-vigil1-7
+    targetId: cs-vigil1-8
+    annotations:
+      authoringKind: information
+  - id: cs-vigil1-42
+    label: Received data and completeness status
+    kind: data_flow
+    sourceId: cs-vigil1-8
+    targetId: cs-vigil1-9
+    annotations:
+      authoringKind: information
+  - id: cs-vigil1-44
+    label: Data receipt and processing readiness
+    kind: data_flow
+    sourceId: cs-vigil1-9
+    targetId: cs-vigil1-8
+    annotations:
+      authoringKind: information
+  - id: cs-vigil1-46
+    label: Processing readiness, progress, predicted completion, and acceptance results
+    kind: feedback
+    sourceId: cs-vigil1-9
+    targetId: cs-vigil1-2
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-48
+    label: Product, quality limitations, and delivery status
+    kind: data_flow
+    sourceId: cs-vigil1-9
+    targetId: cs-vigil1-1
+    annotations:
+      authoringKind: information
+  - id: cs-vigil1-50
+    label: Product acceptance
+    kind: feedback
+    sourceId: cs-vigil1-1
+    targetId: cs-vigil1-9
+    annotations:
+      authoringKind: feedback
+metadata:
+  authoring:
+    version: m45.control-structure-authoring.v1
+    grammarVersion: "0.1"
+    source: |
+      # Mission coordination
+      Imagery user (controller) -> Mission operations (controller): Target, deadline, and image acceptance criteria
+      Mission operations -> Imagery user: Request disposition and predicted delivery [feedback]
+
+      # Onboard control
+      Mission operations -> Onboard activity control (controller): Acquisition plan and operating limits
+      Mission operations -> SC (controller): Stored command sequences and timing
+      SC -> Onboard activity control: Scheduled and protective commands
+      Health assessment (controller) -> SC: Protective sequence request
+      Health assessment -> Onboard activity control: Equipment capability, measurement time, and validity [feedback]
+      Onboard activity control -> Health assessment: Data receipt and validity faults [feedback]
+      Onboard activity control -> Attitude control (controller): Permitted maneuver and required attitude
+      Attitude control -> Onboard activity control: Attitude, wheel state, and capability [feedback]
+      Onboard activity control -> SAR payload (process): Permitted acquisition or restriction
+      SAR payload -> Onboard activity control: Acquisition progress, completion, or interruption [feedback]
+
+      # Ground delivery
+      Mission operations -> Dedicated ground station (process): Reserved contact and expected data volume
+      Dedicated ground station -> Mission operations: Contact availability and reception status [feedback]
+      Mission operations -> Dedicated ground product processing (controller): Processing priority, capacity allocation, and acceptance criteria
+      SAR payload -> Dedicated ground station: Acquisition data and context [information]
+      Dedicated ground station -> Dedicated ground product processing: Received data and completeness status [information]
+      Dedicated ground product processing -> Dedicated ground station: Data receipt and processing readiness [information]
+      Dedicated ground product processing -> Mission operations: Processing readiness, progress, predicted completion, and acceptance results [feedback]
+      Dedicated ground product processing -> Imagery user: Product, quality limitations, and delivery status [information]
+      Imagery user -> Dedicated ground product processing: Product acceptance [feedback]
+
+      # Permission decision
+      Onboard activity control process model:
+        Current acquisition plan and operating limits
+        Health measurement time and validity
+        Capability for the requested maneuver and acquisition
+        Current attitude, power, and thermal state
+
+      Onboard activity control control algorithm:
+        Apply CON-01 before each maneuver and SAR acquisition, including scheduled, direct, and recovery commands.
+        Require valid health information no more than two seconds old, the required attitude capability, and compliance with power and thermal limits.
+        Monitor applicable limits during the activity. Restrict the activity if permission is lost and report the reason to mission operations.
+    identity:
+      namespace: vigil1
+      nextId: 58
+      entries:
+        - from: 23
+          to: 35
+          id: cs-vigil1-1
+          key: Imagery user
+          kind: component
+        - from: 52
+          to: 70
+          id: cs-vigil1-2
+          key: Mission operations
+          kind: component
+        - from: 264
+          to: 288
+          id: cs-vigil1-3
+          key: Onboard activity control
+          kind: component
+        - from: 363
+          to: 365
+          id: cs-vigil1-4
+          key: SC
+          kind: component
+        - from: 482
+          to: 499
+          id: cs-vigil1-5
+          key: Health assessment
+          kind: component
+        - from: 778
+          to: 794
+          id: cs-vigil1-6
+          key: Attitude control
+          kind: component
+        - from: 973
+          to: 984
+          id: cs-vigil1-7
+          key: SAR payload
+          kind: component
+        - from: 1176
+          to: 1200
+          id: cs-vigil1-8
+          key: Dedicated ground station
+          kind: component
+        - from: 1377
+          to: 1412
+          id: cs-vigil1-9
+          key: Dedicated ground product processing
+          kind: component
+        - from: 23
+          to: 132
+          id: cs-vigil1-10
+          key: '["cs-vigil1-1","cs-vigil1-2","control"]:Target, deadline, and image acceptance criteria'
+          kind: connection
+        - from: 23
+          to: 132
+          id: cs-vigil1-11
+          key: cs-vigil1-10
+          kind: signal
+        - from: 133
+          to: 222
+          id: cs-vigil1-12
+          key: '["cs-vigil1-2","cs-vigil1-1","feedback"]:Request disposition and predicted delivery'
+          kind: connection
+        - from: 133
+          to: 222
+          id: cs-vigil1-13
+          key: cs-vigil1-12
+          kind: signal
+        - from: 242
+          to: 340
+          id: cs-vigil1-14
+          key: '["cs-vigil1-2","cs-vigil1-3","control"]:Acquisition plan and operating limits'
+          kind: connection
+        - from: 242
+          to: 340
+          id: cs-vigil1-15
+          key: cs-vigil1-14
+          kind: signal
+        - from: 341
+          to: 415
+          id: cs-vigil1-16
+          key: '["cs-vigil1-2","cs-vigil1-4","control"]:Stored command sequences and timing'
+          kind: connection
+        - from: 341
+          to: 415
+          id: cs-vigil1-17
+          key: cs-vigil1-16
+          kind: signal
+        - from: 416
+          to: 481
+          id: cs-vigil1-18
+          key: '["cs-vigil1-4","cs-vigil1-3","control"]:Scheduled and protective commands'
+          kind: connection
+        - from: 416
+          to: 481
+          id: cs-vigil1-19
+          key: cs-vigil1-18
+          kind: signal
+        - from: 482
+          to: 547
+          id: cs-vigil1-20
+          key: '["cs-vigil1-5","cs-vigil1-4","control"]:Protective sequence request'
+          kind: connection
+        - from: 482
+          to: 547
+          id: cs-vigil1-21
+          key: cs-vigil1-20
+          kind: signal
+        - from: 548
+          to: 658
+          id: cs-vigil1-22
+          key: '["cs-vigil1-5","cs-vigil1-3","feedback"]:Equipment capability, measurement time, and validity'
+          kind: connection
+        - from: 548
+          to: 658
+          id: cs-vigil1-23
+          key: cs-vigil1-22
+          kind: signal
+        - from: 659
+          to: 749
+          id: cs-vigil1-24
+          key: '["cs-vigil1-3","cs-vigil1-5","feedback"]:Data receipt and validity faults'
+          kind: connection
+        - from: 659
+          to: 749
+          id: cs-vigil1-25
+          key: cs-vigil1-24
+          kind: signal
+        - from: 750
+          to: 849
+          id: cs-vigil1-26
+          key: '["cs-vigil1-3","cs-vigil1-6","control"]:Permitted maneuver and required attitude'
+          kind: connection
+        - from: 750
+          to: 849
+          id: cs-vigil1-27
+          key: cs-vigil1-26
+          kind: signal
+        - from: 850
+          to: 944
+          id: cs-vigil1-28
+          key: '["cs-vigil1-6","cs-vigil1-3","feedback"]:Attitude, wheel state, and capability'
+          kind: connection
+        - from: 850
+          to: 944
+          id: cs-vigil1-29
+          key: cs-vigil1-28
+          kind: signal
+        - from: 945
+          to: 1032
+          id: cs-vigil1-30
+          key: '["cs-vigil1-3","cs-vigil1-7","control"]:Permitted acquisition or restriction'
+          kind: connection
+        - from: 945
+          to: 1032
+          id: cs-vigil1-31
+          key: cs-vigil1-30
+          kind: signal
+        - from: 1033
+          to: 1134
+          id: cs-vigil1-32
+          key: '["cs-vigil1-7","cs-vigil1-3","feedback"]:Acquisition progress, completion, or interruption'
+          kind: connection
+        - from: 1033
+          to: 1134
+          id: cs-vigil1-33
+          key: cs-vigil1-32
+          kind: signal
+        - from: 1154
+          to: 1253
+          id: cs-vigil1-34
+          key: '["cs-vigil1-2","cs-vigil1-8","control"]:Reserved contact and expected data volume'
+          kind: connection
+        - from: 1154
+          to: 1253
+          id: cs-vigil1-35
+          key: cs-vigil1-34
+          kind: signal
+        - from: 1254
+          to: 1354
+          id: cs-vigil1-36
+          key: '["cs-vigil1-8","cs-vigil1-2","feedback"]:Contact availability and reception status'
+          kind: connection
+        - from: 1254
+          to: 1354
+          id: cs-vigil1-37
+          key: cs-vigil1-36
+          kind: signal
+        - from: 1355
+          to: 1492
+          id: cs-vigil1-38
+          key: '["cs-vigil1-2","cs-vigil1-9","control"]:Processing priority, capacity allocation, and acceptance criteria'
+          kind: connection
+        - from: 1355
+          to: 1492
+          id: cs-vigil1-39
+          key: cs-vigil1-38
+          kind: signal
+        - from: 1493
+          to: 1576
+          id: cs-vigil1-40
+          key: '["cs-vigil1-7","cs-vigil1-8","information"]:Acquisition data and context'
+          kind: connection
+        - from: 1493
+          to: 1576
+          id: cs-vigil1-41
+          key: cs-vigil1-40
+          kind: signal
+        - from: 1577
+          to: 1693
+          id: cs-vigil1-42
+          key: '["cs-vigil1-8","cs-vigil1-9","information"]:Received data and completeness status'
+          kind: connection
+        - from: 1577
+          to: 1693
+          id: cs-vigil1-43
+          key: cs-vigil1-42
+          kind: signal
+        - from: 1694
+          to: 1810
+          id: cs-vigil1-44
+          key: '["cs-vigil1-9","cs-vigil1-8","information"]:Data receipt and processing readiness'
+          kind: connection
+        - from: 1694
+          to: 1810
+          id: cs-vigil1-45
+          key: cs-vigil1-44
+          kind: signal
+        - from: 1811
+          to: 1957
+          id: cs-vigil1-46
+          key: '["cs-vigil1-9","cs-vigil1-2","feedback"]:Processing readiness, progress, predicted completion, and acceptance results'
+          kind: connection
+        - from: 1811
+          to: 1957
+          id: cs-vigil1-47
+          key: cs-vigil1-46
+          kind: signal
+        - from: 1958
+          to: 2074
+          id: cs-vigil1-48
+          key: '["cs-vigil1-9","cs-vigil1-1","information"]:Product, quality limitations, and delivery status'
+          kind: connection
+        - from: 1958
+          to: 2074
+          id: cs-vigil1-49
+          key: cs-vigil1-48
+          kind: signal
+        - from: 2075
+          to: 2157
+          id: cs-vigil1-50
+          key: '["cs-vigil1-1","cs-vigil1-9","feedback"]:Product acceptance'
+          kind: connection
+        - from: 2075
+          to: 2157
+          id: cs-vigil1-51
+          key: cs-vigil1-50
+          kind: signal
+        - from: 2181
+          to: 2409
+          id: cs-vigil1-52
+          key: cs-vigil1-3:process_model
+          kind: process_model
+        - from: 2223
+          to: 2268
+          id: cs-vigil1-53
+          key: cs-vigil1-52:Current acquisition plan and operating limits
+          kind: variable
+        - from: 2271
+          to: 2307
+          id: cs-vigil1-54
+          key: cs-vigil1-52:Health measurement time and validity
+          kind: variable
+        - from: 2310
+          to: 2363
+          id: cs-vigil1-55
+          key: cs-vigil1-52:Capability for the requested maneuver and acquisition
+          kind: variable
+        - from: 2366
+          to: 2408
+          id: cs-vigil1-56
+          key: cs-vigil1-52:Current attitude, power, and thermal state
+          kind: variable
+        - from: 2410
+          to: 2846
+          id: cs-vigil1-57
+          key: cs-vigil1-3:control_algorithm
+          kind: control_algorithm
+    authoredTextHash: 8562aad939459b1800507f1fd6d0aa9a2601b0683302c7f7a155a91af832b632
+  lifecycle: authored

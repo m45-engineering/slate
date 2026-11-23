@@ -266,3 +266,14 @@ test('import requires disk files and confines the destination to the workspace',
     await assert.rejects(store.importFiles([source], 'outside'), /outside/);
   }
 });
+
+test('new files can be seeded atomically without replacing existing content', async t => {
+  const { root, store } = await fixture(t);
+  const content = 'Pilot (controller) -> Hoist (actuator): Raise\n';
+  await store.create('docs', 'structure.txt', 'file', content);
+  assert.equal(await fs.readFile(path.join(root, 'docs/structure.txt'), 'utf8'), content);
+  await assert.rejects(store.create('docs', 'structure.txt', 'file', 'replacement'), /already exists/);
+  assert.equal(await fs.readFile(path.join(root, 'docs/structure.txt'), 'utf8'), content);
+  await assert.rejects(store.create('docs', 'bad.txt', 'file', null), /Invalid initial/);
+  await assert.rejects(store.create('docs', 'bad.txt', 'file', 'a\0b'), /Invalid initial/);
+});

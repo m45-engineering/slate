@@ -36,7 +36,7 @@ export function PdfDocument() {
     let finishing = false;
     let expectedDiagrams = 0;
     editor.state.doc.descendants(node => {
-      if (node.type.name === 'codeBlock' && node.attrs.language === 'mermaid') expectedDiagrams++;
+      if (node.type.name === 'codeBlock' && ['mermaid', 'control-structure', 'm45-control-structure'].includes(node.attrs.language)) expectedDiagrams++;
     });
     const check = async () => {
       if (canceled || finishing) return;
@@ -45,13 +45,14 @@ export function PdfDocument() {
         window.slatePdf?.ready('A formula is invalid. Fix its LaTeX before exporting.');
         return;
       }
-      const diagrams = [...editor.view.dom.querySelectorAll<HTMLElement>('.mermaid-block')];
-      if (diagrams.some(element => element.dataset.mermaidStatus === 'error')) {
+      const diagrams = [...editor.view.dom.querySelectorAll<HTMLElement>('.mermaid-block, .control-block .control-preview')];
+      const invalid = diagrams.find(element => (element.dataset.mermaidStatus ?? element.dataset.diagramStatus) === 'error');
+      if (invalid) {
         finishing = true;
-        window.slatePdf?.ready('A Mermaid diagram is invalid. Fix its source before exporting.');
+        window.slatePdf?.ready(`A ${invalid.dataset.mermaidStatus ? 'Mermaid' : 'control structure'} diagram is invalid. Fix its source before exporting.`);
         return;
       }
-      if (diagrams.length !== expectedDiagrams || diagrams.some(element => element.dataset.mermaidStatus !== 'ready')) return;
+      if (diagrams.length !== expectedDiagrams || diagrams.some(element => (element.dataset.mermaidStatus ?? element.dataset.diagramStatus) !== 'ready')) return;
       finishing = true;
       // Paginate a static copy so print-only grouping never changes the editor's document.
       const printable = editor.view.dom.cloneNode(true) as HTMLElement;
@@ -71,7 +72,7 @@ export function PdfDocument() {
       }
       const oversized: { section: HTMLElement; name: string; width: number }[] = [];
       const mmPerPixel = 25.4 / 96;
-      for (const diagram of printable.querySelectorAll('.mermaid-block')) {
+      for (const diagram of printable.querySelectorAll('.mermaid-block, .control-block .control-preview')) {
         let block = diagram;
         while (block.parentElement && block.parentElement !== printable) block = block.parentElement;
         const headings: Element[] = [];

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.8 - 2026-11-23
+
+- Open and create M45 control structures as one YAML or JSON file containing the simple source, graph, and saved layout. Switch between Source and Visual views, with validation and preserved record identities and metadata.
+- Add, rename, connect, and delete components through the diagram. Undo and redo source edits, visual edits, and layout changes.
+- Drag components with orthogonal connector routing, or use Auto-arrange to reset the layout. Expand the complete editor with its tools and Save control.
+- Create control structures from the New menu or a folder's New File template. Keep plain text files as ordinary text.
+- Preview control-structure Markdown fences and include them in PDF exports.
+- Use compact icon buttons with tooltips, clearer component role labels, and a canvas that fills the available height.
+
 ## 0.1.7 - 2026-11-18
 
 - Highlight embedded code blocks in Visual view and PDF exports using their fence language, including aliases such as `ts` and `js`.

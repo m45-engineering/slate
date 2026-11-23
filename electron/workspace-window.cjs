@@ -266,8 +266,8 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     catch (error) { return { error: error.message }; }
   });
   handle('folder:open-file', relativePath => exclusive(async () => openFile(await folder.resolve(relativePath))));
-  handle('folder:create', (parent, name, kind) => exclusive(async () => {
-    const created = await folder.create(parent, name, kind);
+  handle('folder:create', (parent, name, kind, content) => exclusive(async () => {
+    const created = await folder.create(parent, name, kind, content);
     if (kind === 'file') await openFile(created.absolute);
     return { changed: true, path: created.path };
   }));
@@ -448,6 +448,7 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     const fileMenu = [
       { id: 'new-window', label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: newWindow },
       { label: 'New', accelerator: 'CmdOrCtrl+N', click: () => void exclusive(() => newDocument()) },
+      { id: 'new-control-structure', label: 'New Control Structure', click: () => command('new-control-structure') },
       { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => void exclusive(openDialog) },
       { label: 'Open Folder…', accelerator: 'CmdOrCtrl+Shift+O', click: () => command('open-folder') },
       { type: 'separator' },

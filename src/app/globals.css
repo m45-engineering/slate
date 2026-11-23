@@ -192,11 +192,12 @@ button svg { flex-shrink: 0; }
 .diagram-preview { padding: 27px 16px; text-align: center; overflow-x: auto; }
 .diagram-preview svg { max-width: 100%; height: auto; }
 .diagram-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; margin-bottom: 8px; font-size: 12px; color: var(--ui-muted); }
-.diagram-controls > span { margin-right: auto; }
+.diagram-controls > .diagram-instructions { margin-right: auto; }
 .diagram-controls output { min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
 .diagram-controls button { height: 28px; min-width: 28px; padding: 0 8px; }
-.diagram-viewport { position: relative; overflow: hidden; cursor: grab; touch-action: none; user-select: none; border: 1px solid var(--ui-hover); border-radius: 6px; }
-.diagram-viewport:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.diagram-viewport { position: relative; overflow: hidden; cursor: grab; touch-action: none; user-select: none; border: 1px solid var(--ui-hover); border-radius: 6px; outline: none; }
+/* Focus stays inside the existing border instead of drawing a clipped outer ring. */
+.diagram-viewport:focus-visible { border-color: #858585; }
 .diagram-viewport.is-panning { cursor: grabbing; }
 .diagram-canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 .diagram-canvas svg { display: block; width: 100%; height: 100%; max-width: none; }
@@ -300,3 +301,54 @@ body:has(.desktop-mac) .diagram-dialog { top: 62px; height: calc(100dvh - 86px);
 .slate-startup { height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff; color: var(--ui-text); -webkit-app-region: drag; }
 .slate-startup > span { margin-top: 18px; font-size: 28px; font-weight: 500; letter-spacing: -1px; }
 .slate-startup > p { margin: 12px 0 0; color: var(--ui-muted); font-size: 13px; }
+
+/* Control structures use the same separate source and visual views as Markdown. */
+.control-document-scroll { display: flex; min-height: 0; padding: 0; }
+.control-document-scroll > .paper[hidden] { display: none; }
+.control-structure-editor { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; font-size: 13px; color: var(--ui-text); }
+.control-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 3px; border-bottom: 1px solid var(--color-border); padding: 8px 16px; }
+.control-toolbar > span:first-child { font-weight: 600; margin-right: auto; }
+.editor-icon-button { width: 32px; height: 32px; padding: 0; }
+.control-toolbar .editor-icon-button { padding: 0; }
+.control-workspace { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.control-workspace > [hidden] { display: none; }
+.control-source { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.control-pane-heading { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 12px 16px; font-size: 11px; color: var(--ui-muted); border-bottom: 1px solid var(--color-border); }
+.control-source-scroll { overflow: auto; flex: 1; min-height: 0; }
+.control-source .source-editor { margin-top: 12px; }
+.control-diagram { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: #fafbfc; }
+.control-diagram > .control-preview { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.control-legend { flex-shrink: 0; }
+.diagram-viewer-fill { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.diagram-viewer-fill > .diagram-controls { flex-shrink: 0; }
+.diagram-viewer-fill > .diagram-viewport { flex: 1; min-height: 0; }
+.control-diagram .diagram-viewer { border: 0; border-radius: 0; }
+.control-diagnostics { padding: 10px 16px; max-height: 160px; overflow: auto; border-top: 1px solid var(--color-border); }
+.control-diagnostics button { display: block; text-align: left; margin: 6px 0; font-size: 12px; cursor: pointer; }
+.control-diagnostics .error { color: #ac3434; }
+.control-diagnostics .warning { color: #886213; }
+.native-select { position: relative; }
+.native-select select { appearance: none; width: 100%; height: 36px; padding: 8px 36px 8px 12px; border: 0; border-radius: 6px; outline: none; background: var(--color-muted); color: var(--ui-text); font: inherit; cursor: pointer; }
+.native-select select:focus-visible { box-shadow: inset 0 0 0 1px #858585; }
+.native-select > svg { position: absolute; right: 12px; top: 50%; width: 14px; height: 14px; transform: translateY(-50%); pointer-events: none; }
+.control-details { flex: 0 1 auto; max-height: min(30vh, 240px); overflow: auto; position: relative; margin: 0 16px 16px; padding: 16px; border: 1px solid var(--color-border); border-radius: 6px; background: white; }
+.control-details > span { margin-left: 8px; color: var(--ui-muted); font-size: 11px; }
+.control-details section { margin-top: 14px; }
+.control-details section button { font-weight: 600; cursor: pointer; }
+.control-details p { white-space: pre-wrap; margin: 6px 0; line-height: 1.6; }
+.control-legend { padding: 0 16px 12px; font-size: 11px; color: var(--ui-muted); }
+.control-form { display: grid; gap: 12px; }
+.control-form label { display: grid; gap: 6px; font-size: 13px; }
+.control-help { white-space: pre-wrap; font-size: 12px; background: #fafafa; padding: 12px; border-radius: 6px; }
+.control-details-close { position: absolute; right: 8px; top: 8px; }
+.control-details > strong { display: inline-block; padding-right: 28px; }
+.control-component, .control-connection, .control-connection-label { cursor: pointer; }
+.control-component.is-selected, .control-component:focus-visible { --control-border-width: 4px; outline: none; }
+.control-connection.is-selected { stroke: #2563eb !important; stroke-width: 3px !important; }
+.control-connection-label.is-selected, .control-connection-label:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+.control-connection-hit { fill: none; stroke: transparent; stroke-width: 14px; vector-effect: non-scaling-stroke; pointer-events: stroke; cursor: pointer; }
+
+.control-editor-dialog { padding: 0; gap: 0; overflow: hidden; }
+.control-expanded-notice { margin: 0; padding: 8px 16px; font-size: 12px; }
+
+.new-file-template { display: grid; gap: 6px; margin-top: 12px; font-size: 13px; }
