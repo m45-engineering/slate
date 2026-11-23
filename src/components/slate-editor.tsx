@@ -14,6 +14,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { ControlStructureEditor } from './control-structure-editor';
+import { ReqifEditor } from './reqif-editor';
+import { isReqifFile, readReqif } from '@/lib/reqif/document';
 import type { IdentityState } from '@/lib/control-structure/schema';
 import type { ControlLayout } from '@/lib/control-structure/layout';
 import { createControlFile, isControlFile, readControlFile, writeControlFile } from '@/lib/control-structure/file';
@@ -134,6 +136,12 @@ export function SlateEditor() {
   const dirty = source !== savedSource;
   const markdownDocument = isMarkdown(doc.name);
   const language = fileLabel(doc.name);
+  const reqifDocument = isReqifFile(doc.name, source);
+  const reqifState = useMemo(() => {
+    if (!reqifDocument) return null;
+    try { return { document: readReqif(source), error: '' }; }
+    catch (error) { return { document: null, error: (error as Error).message }; }
+  }, [reqifDocument, source]);
   const controlDocument = isControlFile(doc.name, source);
   const controlState = useMemo(() => {
     if (!controlDocument) return null;
@@ -167,17 +175,17 @@ export function SlateEditor() {
     onTransaction: () => setRevision(value => value + 1),
   });
 
-  const find = useFindReplace({ editor, source: controlActive ? controlFile.source : source, mode: controlActive ? 'source' : mode, documentId: doc.id, sourceInput, onSourceChange: controlActive ? updateControlSource : setSource });
+  const find = useFindReplace({ editor, source: controlActive ? controlFile.source : source, mode: controlActive || reqifDocument ? 'source' : mode, documentId: doc.id, sourceInput, onSourceChange: controlActive ? updateControlSource : setSource });
 
   const openDocumentFind = useCallback((replace = false) => {
-    if (controlActive && mode === 'visual') setMode('source');
+    if ((controlActive || reqifDocument) && mode === 'visual') setMode('source');
     find.openFind(replace);
-  }, [controlActive, mode, find.openFind]);
+  }, [controlActive, reqifDocument, mode, find.openFind]);
 
   const navigateDocumentFind = useCallback((direction: number) => {
-    if (controlActive && mode === 'visual') setMode('source');
+    if ((controlActive || reqifDocument) && mode === 'visual') setMode('source');
     find.navigate(direction);
-  }, [controlActive, mode, find.navigate]);
+  }, [controlActive, reqifDocument, mode, find.navigate]);
 
   const cacheActive = useCallback(() => {
     tabDrafts.current.set(docRef.current.id, {
@@ -196,7 +204,7 @@ export function SlateEditor() {
     for (const id of tabDrafts.current.keys()) if (!ids.has(id) || id === workspace.replaceId) tabDrafts.current.delete(id);
     tabsRef.current = workspace.documents;
     setTabs(workspace.documents);
-    const typeChanged = isMarkdown(next.name) !== isMarkdown(docRef.current.name) || isControlFile(next.name, next.content) !== isControlFile(docRef.current.name, sourceRef.current);
+    const typeChanged = isMarkdown(next.name) !== isMarkdown(docRef.current.name) || isControlFile(next.name, next.content) !== isControlFile(docRef.current.name, sourceRef.current) || isReqifFile(next.name, next.content) !== isReqifFile(docRef.current.name, sourceRef.current);
     if (next.id === docRef.current.id && workspace.replaceId !== next.id && !typeChanged) {
       docRef.current = next;
       setDoc(next);
@@ -215,7 +223,11 @@ export function SlateEditor() {
     if (isControlFile(next.name, nextSource) || isControlFile(next.name, nextSaved)) {
       try { readControlFile(next.name, nextSource); controlReadable = true; } catch { /* Raw source remains editable. */ }
     }
-    const nextMode = !isMarkdown(next.name) && !controlReadable ? 'source' : draft?.mode ?? (controlReadable || !sourceOnlyReason(nextSource) ? 'visual' : 'source');
+    let reqifReadable = false;
+    if (isReqifFile(next.name, nextSource)) {
+      try { readReqif(nextSource); reqifReadable = true; } catch { /* Invalid XML stays editable in Source. */ }
+    }
+    const nextMode = !isMarkdown(next.name) && !controlReadable && !reqifReadable ? 'source' : draft?.mode ?? (controlReadable || reqifReadable || !sourceOnlyReason(nextSource) ? 'visual' : 'source');
     const changed = workspace.replaceId === next.id ? false : diskChanges.current.get(next.id) ?? draft?.diskChanged ?? false;
     if (workspace.replaceId === next.id) diskChanges.current.delete(next.id);
     documentVersion.current++;
@@ -256,16 +268,17 @@ export function SlateEditor() {
   }, [loadWorkspace]);
 
   const switchMode = useCallback(() => {
-    if (!markdownDocument && !controlDocument) return;
-    if (controlDocument && !controlFile) { setNotice(controlState?.error ?? 'Cannot read this control structure.'); return; }
+    if (!markdownDocument && !controlDocument && !reqifDocument) return;
     if (mode === 'visual') { setMode('source'); return; }
+    if (reqifDocument && !reqifState?.document) { setNotice(reqifState?.error ?? 'Cannot read this ReqIF document.'); return; }
+    if (controlDocument && !controlFile) { setNotice(controlState?.error ?? 'Cannot read this control structure.'); return; }
     if (unsupported) { setNotice(`Keep this document in Markdown to preserve its ${unsupported}.`); return; }
     if (editor && markdownDocument) {
       editor.commands.setContent(sourceRef.current, { contentType: 'markdown', emitUpdate: false });
       editor.view.updateState(EditorState.create({ schema: editor.schema, doc: editor.state.doc, plugins: editor.state.plugins }));
     }
     setMode('visual');
-  }, [editor, mode, unsupported, markdownDocument, controlDocument, controlFile, controlState]);
+  }, [editor, mode, unsupported, markdownDocument, controlDocument, controlFile, controlState, reqifDocument, reqifState]);
 
   const save = useCallback(async (saveAs = false, confirmationId?: number): Promise<boolean> => {
     if (savingRef.current) return false;
@@ -296,7 +309,7 @@ export function SlateEditor() {
         }
         if (!result.document) return false;
         docRef.current = result.document;
-        if (!isMarkdown(result.document.name) && !isControlFile(result.document.name, content)) setMode('source');
+        if (!isMarkdown(result.document.name) && !isControlFile(result.document.name, content) && !isReqifFile(result.document.name, content)) setMode('source');
         setDoc(result.document); setSavedSource(content); setDiskChanged(false);
         liveState.current.savedSource = content;
         diskChanges.current.delete(currentDocument.id);
@@ -592,7 +605,7 @@ export function SlateEditor() {
     }}>
     <header className="titlebar">
       <div className="brand"><Tool label="Toggle sidebar" icon="panel" active={outlineOpen} onClick={() => setOutlineOpen(!outlineOpen)} /><span>Slate</span></div>
-      <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{(markdownDocument || controlDocument) && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>
+      <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{(markdownDocument || controlDocument || reqifDocument) && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>
       <div className="file-actions">
         <Tool label={`Find (${isMac ? '⌘' : 'Ctrl+'}F)`} icon="search" onClick={() => openDocumentFind()} />
         {desktop && markdownDocument && <TooltipHint content={exporting ? 'Exporting PDF…' : 'Export PDF'}><Button variant="ghost" className="text-button export-button" aria-label={exporting ? 'Exporting PDF' : 'Export PDF'} disabled={exporting || saving} onClick={() => void exportPdf()}><Icon name="file" /><span>{exporting ? 'Exporting…' : 'Export PDF'}</span></Button></TooltipHint>}
@@ -614,6 +627,7 @@ export function SlateEditor() {
       clearRecovery(recovery.id);
     }}>Recover as new document</Button><Button variant="ghost" size="icon" aria-label="Dismiss recovery" onClick={() => clearRecovery(recovery.id)}><Icon name="close" size={14} /></Button></div>}
     {diskChanged && <div className="notice warning" role="alert"><span>This file changed outside Slate. Your edits are still here.</span><Button variant="ghost" size="sm" onClick={() => void window.slate?.reload()}>Reload file</Button><Button variant="ghost" size="sm" onClick={() => void save(true)}>Save a copy</Button></div>}
+    {reqifState?.error && <div className="notice" role="status"><span>{reqifState.error}</span><Button variant="ghost" size="sm" onClick={() => setMode('source')}>Edit source</Button></div>}
     {controlState?.error && <div className="notice" role="status"><span>{controlState.error}</span></div>}
     {unsupported && mode === 'source' && <div className="notice" role="status"><span>This document contains {unsupported}. Use Markdown to preserve it.</span></div>}
     {notice && !confirmation && <div className="notice" role="status"><span>{notice}</span><Button variant="ghost" size="icon" aria-label="Dismiss message" onClick={() => setNotice('')}><Icon name="close" size={14} /></Button></div>}
@@ -633,7 +647,7 @@ export function SlateEditor() {
       </>}
       <ResizablePanel id="editor" minSize={300}>
       <main className="editor-main">
-        <div style={controlActive ? { display: 'none' } : undefined} className={`formatbar ${toolbarDisabled ? 'source-formatbar' : ''}`} aria-label="Formatting toolbar">
+        <div style={controlActive || (reqifDocument && mode === 'visual') ? { display: 'none' } : undefined} className={`formatbar ${toolbarDisabled ? 'source-formatbar' : ''}`} aria-label="Formatting toolbar">
           {toolbarDisabled ? <span className="source-caption"><Icon name="code" />{markdownDocument ? 'Markdown source' : language}</span> : <>
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button variant="ghost" className="text-style-trigger" aria-label="Text style"><span>{editor?.isActive('heading') ? `Heading ${editor.getAttributes('heading').level}` : 'Normal text'}</span><Icon name="chevron" size={13} /></Button></DropdownMenuTrigger>
@@ -673,9 +687,10 @@ export function SlateEditor() {
           setLinkOpen(false);
         }}><Input autoFocus aria-label="Link URL" placeholder="https://…" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} /><Button type="submit" size="sm">Apply</Button><Button variant="ghost" size="sm" onClick={() => setLinkOpen(false)}>Cancel</Button></form>}
         {inTable && <div className="table-actions" aria-label="Table actions"><span>Table</span><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().addRowAfter().run()}>+ Row</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().addColumnAfter().run()}>+ Column</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteRow().run()}>Delete row</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteColumn().run()}>Delete column</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteTable().run()}>Delete table</Button></div>}
-        <div className={`document-scroll${controlActive ? ' control-document-scroll' : ''}`} ref={scrollArea}>
+        <div className={`document-scroll${controlActive || (reqifDocument && mode === 'visual') ? ' control-document-scroll' : ''}`} ref={scrollArea}>
           {controlActive && <ControlStructureEditor key={doc.id} mode={mode} onModeChange={setMode} onSave={() => void save()} saveDisabled={saving || !dirty || controlInvalid} notice={notice} source={controlFile.source} layout={controlFile.layout} result={controlFile.result} onChange={updateControlSource} inputRef={sourceInput} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
-          <div hidden={controlActive} className={`paper ${mode === 'source' ? 'source-paper' : ''} ${!markdownDocument ? 'code-paper' : ''}`} style={{ zoom: documentZoom / 100 }}>
+          {reqifState?.document && <div hidden={mode !== 'visual'} className="reqif-container"><ReqifEditor key={doc.id} document={reqifState.document} onChange={setSource} /></div>}
+          <div hidden={controlActive || (reqifDocument && mode === 'visual')} className={`paper ${mode === 'source' ? 'source-paper' : ''} ${!markdownDocument ? 'code-paper' : ''}`} style={{ zoom: documentZoom / 100 }}>
             {/* Keep Tiptap mounted so its React plugins are not registered twice when switching views. */}
             <div hidden={mode !== 'visual' || !markdownDocument}><EditorContent editor={editor} /></div>{mode === 'source' && !controlActive && <SourceEditor key={doc.id} ref={sourceInput} value={source} filename={doc.name} label={markdownDocument ? 'Markdown source' : 'Source editor'} onChange={setSource} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
           </div>
