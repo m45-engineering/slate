@@ -175,6 +175,8 @@ First run `pnpm install --frozen-lockfile`. Each packaging command regenerates t
 
 The initial update introducing documentation-only skipping also skips the desktop jobs when upgrading from the exact previous workflow version and no other application, test, or configuration files changed. Later workflow edits follow the normal build path.
 
+CI explicitly enables certificate-free ad-hoc signing for macOS pull-request builds. Before uploading installers or caching successful validation, it mounts the finished DMG read-only and checks the enclosed app's signature and version with [the installer verification script](scripts/verify-mac-installer.mjs). A missing or invalid signature fails the build. This signing step does not use certificate secrets.
+
 **Release status:** macOS packaging uses `identity: "-"`, `hardenedRuntime: false`, and `notarize: false` for a locally signed build without selecting a Keychain certificate. Build on the target architecture with its matching Electron installation. To avoid unverified-developer warnings, macOS builds need a Developer ID signature and notarization, and Windows builds need a trusted signing certificate. There is no automatic updater.
 
 `pnpm icons` regenerates the app icon, startup mark, and installer background. `pnpm dev` and `pnpm start` use a cached, branded macOS launcher so development windows also appear as Slate. The original Electron dependency is left untouched.
