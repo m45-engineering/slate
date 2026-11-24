@@ -19,6 +19,8 @@ export interface DesktopBridge {
   newDocument(draft?: { name: string; content: string }): Promise<FileResult>;
   save(content: string, saveAs: boolean, options?: { id?: string; path: string | null; confirmationId?: number }): Promise<FileResult>;
   exportPdf(content: string, id: string): Promise<{ path?: string; canceled?: boolean; error?: string }>;
+  copyText(text: string): Promise<void>;
+  copyImage(png: Uint8Array): Promise<void>;
   activateTab(id: string): Promise<void>;
   closeTab(id: string): Promise<{ canceled?: boolean }>;
   closeTabs(ids: string[], keepId?: string): Promise<{ canceled?: boolean } | void>;

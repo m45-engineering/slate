@@ -33,7 +33,7 @@ function identity(value: unknown): IdentityState {
   if (!record(value) || typeof value.namespace !== 'string' || !/^[\w-]+$/.test(value.namespace) || !Number.isSafeInteger(value.nextId) || Number(value.nextId) < 1 || !Array.isArray(value.entries)) throw new Error('Invalid M45 authoring identity. Use Source to inspect the file.');
   const ids = new Set<string>(), keys = new Set<string>();
   for (const entry of value.entries) {
-    if (!record(entry) || typeof entry.id !== 'string' || typeof entry.key !== 'string' || !['component', 'connection', 'signal', 'process_model', 'variable', 'control_algorithm'].includes(String(entry.kind)) || !Number.isInteger(entry.from) || !Number.isInteger(entry.to) || Number(entry.from) < 0 || Number(entry.to) < Number(entry.from) || ids.has(entry.id) || keys.has(`${entry.kind}:${entry.key}`)) throw new Error('Invalid or duplicate M45 identity entry. Use Source to inspect the file.');
+    if (!record(entry) || typeof entry.id !== 'string' || typeof entry.key !== 'string' || !['component', 'connection', 'signal', 'process_model', 'variable', 'control_algorithm', 'rule'].includes(String(entry.kind)) || !Number.isInteger(entry.from) || !Number.isInteger(entry.to) || Number(entry.from) < 0 || Number(entry.to) < Number(entry.from) || ids.has(entry.id) || keys.has(`${entry.kind}:${entry.key}`)) throw new Error('Invalid or duplicate M45 identity entry. Use Source to inspect the file.');
     const prefix = `cs-${value.namespace}-`;
     const serial = entry.id.slice(prefix.length);
     if (!entry.id.startsWith(prefix) || !/^[1-9][0-9]*$/.test(serial) || Number(serial) >= Number(value.nextId)) throw new Error('Invalid M45 identity sequence. Use Source to inspect the file.');
@@ -58,8 +58,16 @@ export function readControlFile(filename: string, content: string): ControlFile 
     const result = compileAuthoringSource(payload.source, identity(payload.identity));
     if (result.valid && !document.metadata?.slateDraft) {
       const projected = projectControlDocument(result, document);
+      const legacyAlgorithms = new Set(document.elements.filter(e => {
+        const details = e.annotations?.authoringDetails;
+        return record(details) && record(details.controlAlgorithm) && details.controlAlgorithm.rules === undefined;
+      }).map(e => e.id));
       const semantics = (doc: Document) => JSON.stringify({
-        elements: doc.elements.map(e => [e.id, e.label, e.kind, e.annotations?.authoringDetails ?? null]).sort(),
+        elements: doc.elements.map(e => {
+          const details = e.annotations?.authoringDetails ? structuredClone(e.annotations.authoringDetails) : null;
+          if (legacyAlgorithms.has(e.id) && record(details) && record(details.controlAlgorithm)) delete details.controlAlgorithm.rules;
+          return [e.id, e.label, e.kind, details];
+        }).sort(),
         relationships: doc.relationships.map(e => [e.id, e.label, e.kind, e.sourceId, e.targetId, e.annotations?.authoringKind]).sort(),
       });
       if (semantics(document) !== semantics(projected)) throw new Error('The stored graph differs from its simple source. Use Source to resolve the mismatch before editing the diagram.');
@@ -87,15 +95,29 @@ function retainedAnnotations(previous: RecordValue | undefined, changed: boolean
   }
   return next;
 }
+
+function retainedItems(previous: unknown, items: Array<{ id: string; text: string }>) {
+  return items.map(item => ({
+    ...(Array.isArray(previous) ? previous.find(value => record(value) && value.id === item.id) : {}),
+    ...item,
+  }));
+}
+
 export function projectControlDocument(result: AuthoringResult, base: Document): Document {
   const elements = result.graph.components.map(component => {
     const previous = base.elements.find(e => e.id === component.id);
     const details = result.graph.details.filter(d => d.ownerId === component.id);
     const model = details.find(d => d.kind === 'process_model'), algorithm = details.find(d => d.kind === 'control_algorithm');
-    const detail = details.length ? { version: 1,
-      ...(model ? { processModel: { id: model.id, variables: model.variables.map(v => ({ id: v.id, text: v.text })) } } : {}),
-      ...(algorithm ? { controlAlgorithm: { id: algorithm.id, text: algorithm.body } } : {}),
-    } : undefined;
+    const oldDetails = record(previous?.annotations?.authoringDetails) ? previous.annotations.authoringDetails : {};
+    const oldModel = record(oldDetails.processModel) ? oldDetails.processModel : {};
+    const oldAlgorithm = record(oldDetails.controlAlgorithm) ? oldDetails.controlAlgorithm : {};
+    const detail: RecordValue | undefined = details.length ? { ...oldDetails, version: 1 } : undefined;
+    if (detail) {
+      if (model) detail.processModel = { ...oldModel, id: model.id, variables: retainedItems(oldModel.variables, model.variables.map(v => ({ id: v.id, text: v.text }))) };
+      else delete detail.processModel;
+      if (algorithm) detail.controlAlgorithm = { ...oldAlgorithm, id: algorithm.id, text: algorithm.body, rules: retainedItems(oldAlgorithm.rules, algorithm.rules.map(r => ({ id: r.id, text: r.text }))) };
+      else delete detail.controlAlgorithm;
+    }
     const kind = component.type === 'process' ? 'controlled_process' : component.type ?? 'other';
     const changed = !!previous && (previous.label !== component.name || previous.kind !== kind || JSON.stringify(previous.annotations?.authoringDetails) !== JSON.stringify(detail));
     const annotations = retainedAnnotations(previous?.annotations, changed);
@@ -111,7 +133,10 @@ export function projectControlDocument(result: AuthoringResult, base: Document):
     return { ...previous, id: connection.id, label: connection.label, kind, sourceId: connection.sourceId, targetId: connection.targetId,
       annotations: { ...retainedAnnotations(previous?.annotations, changed), authoringKind: connection.relationship } };
   });
-  const metadata = { ...base.metadata, authoring: { version: AUTHORING_VERSION, grammarVersion: GRAMMAR_VERSION, source: result.source, identity: result.identity }, lifecycle: result.exportable ? 'authored' : 'draft' };
+  const authoring = { ...(record(base.metadata?.authoring) ? base.metadata.authoring : {}), version: AUTHORING_VERSION, grammarVersion: GRAMMAR_VERSION, source: result.source, identity: result.identity };
+  // M45 must seal the edited source again; never retain a stale source digest.
+  delete (authoring as RecordValue).authoredTextHash;
+  const metadata = { ...base.metadata, authoring, lifecycle: result.exportable ? 'authored' : 'draft' };
   delete (metadata as RecordValue).slateDraft;
   const elementIds = new Set(elements.map(e => e.id)), relationshipIds = new Set(relationships.map(e => e.id));
   const views = Array.isArray(base.views) ? base.views.map(view => record(view) ? { ...view,

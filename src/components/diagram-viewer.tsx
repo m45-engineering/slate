@@ -11,29 +11,29 @@ type NodeEditing = { positions?: ControlLayout; onMove?(positions: ControlLayout
 type Layout = { width: number; height: number; viewportWidth: number; viewportHeight: number; fit: number };
 type View = { scale: number; x: number; y: number };
 
-export function DiagramViewer({ svg, title = 'Mermaid diagram', selectedId, onCanvasClick, positions, onMove, fill = false, expandable = true }: NodeEditing & { expandable?: boolean; svg: string; title?: string; fill?: boolean; selectedId?: string; onCanvasClick?(target: Element): void }) {
+export function DiagramViewer({ svg, title = 'Mermaid diagram', selectedId, onCanvasClick, positions, onMove, fill = false, expandable = true, preserveViewport = false }: NodeEditing & { expandable?: boolean; preserveViewport?: boolean; svg: string; title?: string; fill?: boolean; selectedId?: string; onCanvasClick?(target: Element): void }) {
   const [expanded, setExpanded] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
 
-  if (!expandable) return <DiagramCanvas positions={positions} onMove={onMove} fill={fill} selectedId={selectedId} onCanvasClick={onCanvasClick} title={title} svg={svg} />;
+  if (!expandable) return <DiagramCanvas preserveViewport={preserveViewport} positions={positions} onMove={onMove} fill={fill} selectedId={selectedId} onCanvasClick={onCanvasClick} title={title} svg={svg} />;
 
   return <Dialog open={expanded} onOpenChange={setExpanded}>
-    <DiagramCanvas positions={positions} onMove={onMove} fill={fill} selectedId={selectedId} onCanvasClick={onCanvasClick} title={title} svg={svg} suspended={expanded} action={<DialogTrigger asChild>
+    <DiagramCanvas preserveViewport={preserveViewport} positions={positions} onMove={onMove} fill={fill} selectedId={selectedId} onCanvasClick={onCanvasClick} title={title} svg={svg} suspended={expanded} action={<DialogTrigger asChild>
       <EditorIconButton label="Expand diagram"><Expand aria-hidden="true" /></EditorIconButton>
     </DialogTrigger>} />
     <DialogContent ref={dialog} className="diagram-dialog" aria-describedby={undefined} onOpenAutoFocus={event => {
       event.preventDefault();
       dialog.current?.querySelector<HTMLElement>('.diagram-viewport')?.focus();
     }}>
-      <DiagramCanvas positions={positions} onMove={onMove} selectedId={selectedId} onCanvasClick={onCanvasClick} title={title} svg={svg} expanded action={
+      <DiagramCanvas preserveViewport={preserveViewport} positions={positions} onMove={onMove} selectedId={selectedId} onCanvasClick={onCanvasClick} title={title} svg={svg} expanded action={
         <EditorIconButton label="Close expanded diagram" onClick={() => setExpanded(false)}><X aria-hidden="true" /></EditorIconButton>
       } />
     </DialogContent>
   </Dialog>;
 }
 
-function DiagramCanvas({ svg, expanded = false, suspended = false, action, title, selectedId, onCanvasClick, positions, onMove, fill = false }: NodeEditing & {
-  fill?: boolean; selectedId?: string; onCanvasClick?(target: Element): void; title: string; svg: string; expanded?: boolean; suspended?: boolean; action?: React.ReactNode;
+function DiagramCanvas({ svg, expanded = false, suspended = false, action, title, selectedId, onCanvasClick, positions, onMove, fill = false, preserveViewport = false }: NodeEditing & {
+  preserveViewport?: boolean; fill?: boolean; selectedId?: string; onCanvasClick?(target: Element): void; title: string; svg: string; expanded?: boolean; suspended?: boolean; action?: React.ReactNode;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
@@ -43,6 +43,8 @@ function DiagramCanvas({ svg, expanded = false, suspended = false, action, title
   const moving = useRef<{ id: string; positions: ControlLayout; inverse: DOMMatrix; start: DOMPoint } | null>(null);
   const [layout, setLayout] = useState<Layout | null>(null);
   const [view, setView] = useState<View>({ scale: 1, x: 0, y: 0 });
+  const hasFitted = useRef(false);
+  const zoomBase = useRef(1);
   const [panning, setPanning] = useState(false);
 
   const editable = !!onMove;
@@ -77,17 +79,26 @@ function DiagramCanvas({ svg, expanded = false, suspended = false, action, title
       previousWidth = width; previousHeight = height;
       const fit = Math.min(1, width / box.width, height / box.height);
       setLayout({ width: box.width, height: box.height, viewportWidth: width, viewportHeight: height, fit });
-      setView({ scale: fit, x: (width - box.width * fit) / 2, y: (height - box.height * fit) / 2 });
+      // Selection, inspector resizing, and editing the SVG must all retain the
+      // user's viewport. Fit once on open; subsequent fits are explicit actions.
+      if (!preserveViewport || !hasFitted.current) {
+        hasFitted.current = true;
+        zoomBase.current = fit;
+        setView({ scale: fit, x: (width - box.width * fit) / 2, y: (height - box.height * fit) / 2 });
+      }
     };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(element);
     window.addEventListener('resize', resize);
     return () => { observer.disconnect(); window.removeEventListener('resize', resize); };
-  }, [svg, expanded, fill, positions, editable]);
+  }, [svg, expanded, fill, positions, editable, preserveViewport]);
 
   const fit = useCallback(() => {
-    if (layout) setView({ scale: layout.fit, x: (layout.viewportWidth - layout.width * layout.fit) / 2, y: (layout.viewportHeight - layout.height * layout.fit) / 2 });
+    if (layout) {
+      zoomBase.current = layout.fit;
+      setView({ scale: layout.fit, x: (layout.viewportWidth - layout.width * layout.fit) / 2, y: (layout.viewportHeight - layout.height * layout.fit) / 2 });
+    }
   }, [layout]);
 
   const zoom = useCallback((factor: number, point?: { x: number; y: number }) => {
@@ -119,7 +130,7 @@ function DiagramCanvas({ svg, expanded = false, suspended = false, action, title
     <div className="diagram-controls">
       {expanded ? <DialogTitle className="diagram-dialog-title">{title}</DialogTitle> : <span className="diagram-instructions">{onMove ? 'Drag boxes to arrange · Drag background to pan' : 'Scroll to zoom · Drag to move'}</span>}
       <EditorIconButton label="Zoom out diagram" onClick={() => zoom(1 / 1.25)}><ZoomOut aria-hidden="true" /></EditorIconButton>
-      <output aria-label="Diagram zoom">{layout ? Math.round(view.scale / layout.fit * 100) : 100}%</output>
+      <output aria-label="Diagram zoom">{layout ? Math.round(view.scale / zoomBase.current * 100) : 100}%</output>
       <EditorIconButton label="Zoom in diagram" onClick={() => zoom(1.25)}><ZoomIn aria-hidden="true" /></EditorIconButton>
       <EditorIconButton label="Fit diagram" onClick={fit}><Maximize2 aria-hidden="true" /></EditorIconButton>
       {action}

@@ -90,7 +90,7 @@ export function ControlStructurePreview({ source, result: supplied, readOnly = f
   }} data-diagram-status={!valid || error ? 'error' : view?.source === source || !source.trim() ? 'ready' : 'pending'}>
     {!valid && <p className="diagram-error" role="status">{view ? 'Last valid preview. ' : ''}Correct the highlighted source to update the diagram.</p>}
     {error && <p className="diagram-error" role="status">{error}</p>}
-    {view?.svg && (readOnly ? <div role="img" aria-label="Control structure diagram" dangerouslySetInnerHTML={{ __html: view.svg }} /> : <DiagramViewer expandable={expandable} positions={positions} onMove={valid ? onMove : undefined} fill={fill} svg={view.svg} title="Control structure diagram" selectedId={selectedId} onCanvasClick={onSelect ? select : undefined} />)}
+    {view?.svg && (readOnly ? <div role="img" aria-label="Control structure diagram" dangerouslySetInnerHTML={{ __html: view.svg }} /> : <DiagramViewer preserveViewport expandable={expandable} positions={positions} onMove={valid ? onMove : undefined} fill={fill} svg={view.svg} title="Control structure diagram" selectedId={selectedId} onCanvasClick={onSelect ? select : undefined} />)}
     {!view?.svg && valid && !error && <p className="diagram-loading">{result.graph.components.length ? 'Drawing control structure…' : 'Write a connection or add a component to begin.'}</p>}
   </div>;
 }

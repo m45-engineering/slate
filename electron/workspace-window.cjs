@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, MenuItem, dialog, shell, screen } = require('electron');
+const { app, BrowserWindow, Menu, MenuItem, dialog, shell, screen, clipboard, ClipboardItem, nativeImage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
@@ -473,6 +473,17 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     return exportPdf({ parent: window, name: record.name, content, documentPath: record.document?.path,
       url: development ? `${process.env.SLATE_DEV_URL}/pdf` : 'slate-app://app/pdf.html' });
   }, true));
+
+  handle('clipboard:write-text', text => {
+    if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > MAX_BYTES) throw new Error('Invalid clipboard text.');
+    return clipboard.writeText(text);
+  });
+  handle('clipboard:write-image', png => {
+    if (!(png instanceof Uint8Array) || png.byteLength > 64 * 1024 * 1024) throw new Error('Invalid clipboard image.');
+    const image = nativeImage.createFromBuffer(Buffer.from(png));
+    if (image.isEmpty()) throw new Error('Invalid clipboard image.');
+    return clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })]);
+  });
 
   function command(value) { send('document:command', value); }
   function createMenu() {

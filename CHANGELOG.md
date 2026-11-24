@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.11 - 2026-11-24
+
+- Open M45 control structures with individually identified algorithm rules. Preserve controller, entry, and rule IDs through edits, save/reopen, and M45 round trips; upgrade older documents on save without dropping unrelated metadata.
+- Inspect and edit process-model entries and algorithm rules together in a compact, resizable dialog. Keep IDs visible beside each item, generate IDs for additions, and retire IDs for removals.
+- Resize the controller inspection pane from its top border and copy its contents, including reference IDs. Rename connection labels directly in Visual view.
+- Copy the complete control-structure diagram as a high-resolution PNG, independent of canvas zoom and pan.
+- Preserve control-structure zoom and pan when selecting components, resizing inspection, or applying edits.
+- Verify the ad-hoc signature of the macOS installer before distributing it, and keep macOS signing options separate from Windows packaging.
+
 ## 0.1.10 - 2026-11-24
 
 - Preview Cameo/MagicDraw `.mdzip` models with saved diagram positions, simplified SysML v1/UML notation, element properties, generic tables, and relationship matrices. Resize the navigation and details panes and use restrained monochrome selection styling.

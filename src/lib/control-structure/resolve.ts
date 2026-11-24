@@ -65,6 +65,7 @@ export function compileAuthoringSource(source: string, previous: IdentityState =
       blocks.set(key, node)
       const id = node.body ? ids.take(node.kind, key, node) : undefined
       const seen = new Map<string, Range>()
+      ids.reserve("variable", new Set(node.entries.map(entry => `${id}:${entry.text}`)))
       const variables = node.kind === "process_model" ? node.entries.map(entry => {
         const duplicateEntry = seen.get(entry.text)
         if (duplicateEntry) {
@@ -74,7 +75,17 @@ export function compileAuthoringSource(source: string, previous: IdentityState =
         seen.set(entry.text, entry)
         return { ...entry, id: ids.take("variable", `${id}:${entry.text}`, entry, `${id}:`) }
       }) : []
-      graph.details.push({ ...node, id, ownerId: owner.id, variables })
+      const occurrences = new Map<string, number>()
+      const ruleKeys = node.kind === "control_algorithm" ? node.entries.map(entry => {
+        const occurrence = (occurrences.get(entry.text) ?? 0) + 1
+        occurrences.set(entry.text, occurrence)
+        return `${id}:${JSON.stringify([entry.text, occurrence])}`
+      }) : []
+      ids.reserve("rule", new Set(ruleKeys))
+      const rules = node.kind === "control_algorithm" ? node.entries.map((entry, index) => {
+        return { ...entry, id: ids.take("rule", ruleKeys[index], entry, `${id}:`) }
+      }) : []
+      graph.details.push({ ...node, id, ownerId: owner.id, variables, rules })
     }
   }
   const valid = !diagnostics.some(d => d.severity === "error")
