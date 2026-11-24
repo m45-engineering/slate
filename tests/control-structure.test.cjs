@@ -47,7 +47,8 @@ test('Vigil-1 YAML opens using its exact M45 source and survives editing with id
   assert.equal(after.document.description, original.document.description);
   assert.equal(after.document.id, original.document.id);
   assert.equal(after.document.metadata.authoring.authoredTextHash, undefined);
-  assert.deepEqual(after.document.elements[2].annotations.authoringDetails, original.document.elements[2].annotations.authoringDetails);
+  assert.deepEqual(after.document.elements[2].annotations.authoringDetails.processModel, original.document.elements[2].annotations.authoringDetails.processModel);
+  assert.equal(after.document.elements[2].annotations.authoringDetails.controlAlgorithm.text, original.document.elements[2].annotations.authoringDetails.controlAlgorithm.text);
 });
 
 test('M45 grammar handles quoted Unicode names, literal blocks, observations, and rejects invalid structures', async () => {
@@ -207,4 +208,235 @@ test('only structured YAML and JSON documents are recognized as control structur
     assert.equal(isControlFile(name, fixture), true);
   }
   assert.equal(isControlFile('loop.json', createControlFile('Loop', 'json')), true);
+});
+
+
+test('identified M45 algorithm rules open, retain references through edits, and reject duplicates', async () => {
+  const { readControlFile, writeControlFile } = await import('../src/lib/control-structure/file.ts');
+  const rulesFixture = fs.readFileSync(require('node:path').join(__dirname, 'fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  const original = readControlFile('vigil.yaml', rulesFixture);
+  const rules = original.result.graph.details.find(d => d.kind === 'control_algorithm').rules;
+  assert.equal(rules.length, 9);
+  assert.deepEqual(rules.map(r => r.id), Array.from({ length: 9 }, (_, i) => `cs-vigil1-${87 + i}`));
+  const nextSource = original.source.replace('Preserve source measurement times.', 'Preserve original source measurement times.');
+  const after = readControlFile('vigil.yaml', writeControlFile(original, nextSource));
+  assert.deepEqual(after.result.graph.details.find(d => d.kind === 'control_algorithm').rules.map(r => r.id), rules.map(r => r.id));
+  const document = structuredClone(original.document);
+  document.metadata.authoring.identity.entries.push(document.metadata.authoring.identity.entries.find(e => e.kind === 'rule'));
+  assert.throws(() => readControlFile('bad.json', JSON.stringify(document)), /duplicate M45 identity/);
+});
+
+test('controller item IDs survive reordering, insertion, wording edits, and YAML/JSON reopen', async () => {
+  const { readControlFile, writeControlFile } = await import('../src/lib/control-structure/file.ts');
+  const content = fs.readFileSync(require('node:path').join(__dirname, 'fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  for (const format of ['yaml', 'json']) {
+    const initial = readControlFile('vigil.yaml', content);
+    if (format === 'json') initial.format = 'json';
+    const algorithm = initial.result.graph.details.find(d => d.kind === 'control_algorithm');
+    const model = initial.result.graph.details.find(d => d.kind === 'process_model');
+    assert.equal(model.id, 'cs-vigil1-76');
+    assert.equal(algorithm.id, 'cs-vigil1-86');
+    assert.deepEqual(model.variables.map(v => v.id), Array.from({ length: 9 }, (_, i) => `cs-vigil1-${77 + i}`));
+    const edited = initial.source.replace(model.variables[0].text, 'Requested activity and its parameters')
+      .replace(algorithm.rules[1].text, 'Preserve original measurement times.');
+    // Apply separate wording edits as the editor does, keeping each identity mapping precise.
+    const modelEdit = readControlFile(`vigil.${format}`, writeControlFile(initial, initial.source.replace(model.variables[0].text, 'Requested activity and its parameters')));
+    const changed = readControlFile(`vigil.${format}`, writeControlFile(modelEdit, edited));
+    const changedAlgorithm = changed.result.graph.details.find(d => d.kind === 'control_algorithm');
+    assert.deepEqual(changedAlgorithm.rules.map(r => r.id), algorithm.rules.map(r => r.id));
+    assert.equal(changed.result.graph.details.find(d => d.kind === 'process_model').variables[0].id, model.variables[0].id);
+    const reordered = [...changedAlgorithm.rules].reverse();
+    const nextSource = changed.source.slice(0, changedAlgorithm.rules[0].from)
+      + reordered.map(r => r.text).join('\n  ') + '\n  Report assessment status.\n';
+    const saved = readControlFile(`vigil.${format}`, writeControlFile(changed, nextSource));
+    const finalAlgorithm = saved.result.graph.details.find(d => d.kind === 'control_algorithm');
+    assert.deepEqual(finalAlgorithm.rules.slice(0, 9).map(r => r.id), reordered.map(r => r.id));
+    assert.ok(!algorithm.rules.some(r => r.id === finalAlgorithm.rules[9].id));
+    const stored = saved.document.elements.find(e => e.id === 'cs-vigil1-3').annotations.authoringDetails.controlAlgorithm;
+    assert.equal(stored.id, algorithm.id);
+    assert.equal(stored.text, finalAlgorithm.body);
+    assert.deepEqual(stored.rules, finalAlgorithm.rules.map(({ id, text }) => ({ id, text })));
+    assert.deepEqual(readControlFile(`vigil.${format}`, writeControlFile(saved, saved.source)).result.identity, saved.result.identity);
+  }
+});
+
+test('legacy documents gain rule IDs on save without losing the algorithm text or weakening consistency checks', async () => {
+  const { readControlFile, writeControlFile } = await import('../src/lib/control-structure/file.ts');
+  const legacy = readControlFile('legacy.yaml', fixture);
+  const before = legacy.document.elements[2].annotations.authoringDetails.controlAlgorithm;
+  assert.equal(before.rules, undefined);
+  const saved = readControlFile('legacy.yaml', writeControlFile(legacy, legacy.source));
+  const after = saved.document.elements[2].annotations.authoringDetails.controlAlgorithm;
+  assert.equal(after.id, before.id);
+  assert.equal(after.text, before.text);
+  assert.ok(after.rules.length > 0);
+  assert.ok(saved.document.metadata.authoring.identity.entries.some(e => e.kind === 'rule'));
+  const badLegacy = structuredClone(legacy.document);
+  badLegacy.elements[2].annotations.authoringDetails.controlAlgorithm.text = 'Unrelated algorithm.';
+  assert.throws(() => readControlFile('bad.json', JSON.stringify(badLegacy)), /differs/);
+  for (const field of ['id', 'text']) {
+    const bad = structuredClone(saved.document);
+    bad.elements[2].annotations.authoringDetails.controlAlgorithm.rules[0][field] = 'forged';
+    assert.throws(() => readControlFile('bad.json', JSON.stringify(bad)), /differs/);
+  }
+});
+
+test('rule identity validation retains duplicate-key, namespace, counter, and kind checks', async () => {
+  const { readControlFile } = await import('../src/lib/control-structure/file.ts');
+  const content = fs.readFileSync(require('node:path').join(__dirname, 'fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  const initial = readControlFile('vigil.yaml', content).document;
+  const mutations = [
+    identity => { identity.entries.filter(e => e.kind === 'rule')[1].key = identity.entries.find(e => e.kind === 'rule').key; },
+    identity => { identity.entries.find(e => e.kind === 'rule').id = 'cs-other-87'; },
+    identity => { identity.nextId = 95; },
+    identity => { identity.nextId = 1.5; },
+    identity => { identity.namespace = 'invalid namespace'; },
+    identity => { identity.entries.find(e => e.kind === 'rule').kind = 'unknown'; },
+  ];
+  for (const mutate of mutations) {
+    const bad = structuredClone(initial);
+    mutate(bad.metadata.authoring.identity);
+    assert.throws(() => readControlFile('bad.json', JSON.stringify(bad)), /Invalid/);
+  }
+});
+
+test('saving controller rules preserves unknown metadata at every retained level', async () => {
+  const { readControlFile, writeControlFile } = await import('../src/lib/control-structure/file.ts');
+  const content = fs.readFileSync(require('node:path').join(__dirname, 'fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  const document = readControlFile('vigil.yaml', content).document;
+  const controller = document.elements[2];
+  const details = controller.annotations.authoringDetails;
+  for (const target of [document, document.metadata, document.metadata.authoring, document.metadata.authoring.identity,
+    document.metadata.authoring.identity.entries.find(e => e.kind === 'rule'), controller, controller.annotations,
+    details, details.processModel, details.processModel.variables[0], details.controlAlgorithm, details.controlAlgorithm.rules[0]]) {
+    target.extension = { note: 'Keep this data', values: [1, 2, 3] };
+  }
+  const original = readControlFile('vigil.json', JSON.stringify(document));
+  const saved = readControlFile('vigil.json', writeControlFile(original, original.source.replace('Preserve source measurement times.', 'Preserve original measurement times.')));
+  const expected = structuredClone(document);
+  expected.metadata.authoring.source = saved.source;
+  expected.metadata.authoring.identity = saved.document.metadata.authoring.identity;
+  delete expected.metadata.authoring.authoredTextHash;
+  expected.metadata.lifecycle = saved.document.metadata.lifecycle;
+  expected.elements[2].annotations.authoringDetails.controlAlgorithm.text = saved.document.elements[2].annotations.authoringDetails.controlAlgorithm.text;
+  expected.elements[2].annotations.authoringDetails.controlAlgorithm.rules[1].text = 'Preserve original measurement times. Receiving or rechecking an old measurement does not make it new.';
+  for (const value of [saved.document, expected]) {
+    value.elements.sort((a, b) => a.id.localeCompare(b.id));
+    value.relationships.sort((a, b) => a.id.localeCompare(b.id));
+  }
+  assert.deepEqual(saved.document, expected);
+  assert.deepEqual(saved.result.identity.extension, { note: 'Keep this data', values: [1, 2, 3] });
+  assert.deepEqual(saved.result.identity.entries.find(e => e.kind === 'rule').extension, saved.result.identity.extension);
+});
+
+test('repeated rules have distinct IDs and deleted IDs are never recycled', async () => {
+  const { compileAuthoringSource } = await import('../src/lib/control-structure/resolve.ts');
+  const source = 'Pilot (controller)\nPilot control algorithm:\n  Check position.\n  Check position.\n';
+  const initial = compileAuthoringSource(source);
+  const rules = initial.graph.details[0].rules;
+  assert.notEqual(rules[0].id, rules[1].id);
+  const removed = compileAuthoringSource('Pilot (controller)\nPilot control algorithm:\n', initial.identity);
+  const restored = compileAuthoringSource(source, removed.identity);
+  assert.ok(restored.graph.details[0].rules.every(r => !rules.some(old => old.id === r.id)));
+});
+
+test('visual edge rename preserves identities, parallel edges, quoting, and unrelated source', async () => {
+  const { compileAuthoringSource } = await import('../src/lib/control-structure/resolve.ts');
+  const { renameVisualConnection } = await import('../src/lib/control-structure/visual-edits.ts');
+  const source = '# Keep this\r\nPilot (controller) -> Hoist (actuator): Raise\r\nPilot -> Hoist: Stop\r\nPilot control algorithm:\r\n  Raise only when permitted.\r\n';
+  const original = compileAuthoringSource(source);
+  const edge = original.graph.connections[0];
+  const renamed = renameVisualConnection(original, edge.id, 'Raise: "carefully" [now]').result;
+  assert.equal(renamed.source, source.replace(': Raise\r\n', ': "Raise: \\"carefully\\" [now]"\r\n'));
+  assert.equal(renamed.graph.connections[0].id, edge.id);
+  assert.equal(renamed.graph.connections[0].signalId, edge.signalId);
+  assert.deepEqual(renamed.graph.connections[1], { ...original.graph.connections[1], from: renamed.graph.connections[1].from, to: renamed.graph.connections[1].to, source: renamed.graph.connections[1].source, target: renamed.graph.connections[1].target });
+  assert.throws(() => renameVisualConnection(original, edge.id, 'Stop'), /already declared/);
+  assert.throws(() => renameVisualConnection(original, edge.id, '  '), /Enter/);
+});
+
+test('direct controller editing retains IDs for multiple wording edits and saves complete blocks', async () => {
+  const { readControlFile, writeControlFile } = await import('../src/lib/control-structure/file.ts');
+  const { editVisualDetail } = await import('../src/lib/control-structure/visual-edits.ts');
+  const content = fs.readFileSync(require('node:path').join(__dirname, 'fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  let file = readControlFile('vigil.yaml', content);
+  for (const kind of ['process_model', 'control_algorithm']) {
+    const detail = file.result.graph.details.find(d => d.kind === kind);
+    const body = detail.entries.map((entry, index) => index < 2 ? entry.text + ' Updated.' : entry.text).join('\n');
+    const edited = editVisualDetail(file.result, detail.id, body).result;
+    const changed = edited.graph.details.find(d => d.kind === kind);
+    assert.equal(changed.id, detail.id);
+    assert.deepEqual([...changed.variables, ...changed.rules].map(v => v.id), [...detail.variables, ...detail.rules].map(v => v.id));
+    file = readControlFile('vigil.yaml', writeControlFile(file, edited.source, edited.identity));
+    assert.equal(file.result.graph.details.find(d => d.kind === kind).body, body);
+  }
+  const model = file.result.graph.details.find(d => d.kind === 'process_model');
+  assert.throws(() => editVisualDetail(file.result, model.id, 'Repeated\nRepeated'), /repeated/);
+  assert.throws(() => editVisualDetail(file.result, model.id, ''), /Enter/);
+});
+
+test('inserting a controller entry cannot steal the identity of retained text', async () => {
+  const { compileAuthoringSource } = await import('../src/lib/control-structure/resolve.ts');
+  const { editVisualDetail } = await import('../src/lib/control-structure/visual-edits.ts');
+  for (const kind of ['process model', 'control algorithm']) {
+    const initial = compileAuthoringSource(`Pilot (controller)\nPilot ${kind}:\n  Position\n`);
+    const detail = initial.graph.details[0];
+    const oldId = [...detail.variables, ...detail.rules][0].id;
+    const changed = editVisualDetail(initial, detail.id, 'Mode\nPosition').result.graph.details[0];
+    const entries = [...changed.variables, ...changed.rules];
+    assert.equal(entries[1].id, oldId);
+    assert.notEqual(entries[0].id, oldId);
+  }
+});
+
+test('identified controller rows edit together, allocate visible IDs, and remove identities without recycling', async () => {
+  const { createControllerDraft, addControllerDraftItem, applyControllerDraft } = await import('../src/lib/control-structure/visual-edits.ts');
+  const { readControlFile, writeControlFile } = await import('../src/lib/control-structure/file.ts');
+  const content = fs.readFileSync(require('node:path').join(__dirname, 'fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  const file = readControlFile('vigil.yaml', content);
+  const ownerId = 'cs-vigil1-3';
+  let draft = createControllerDraft(file.result, ownerId);
+  assert.equal(applyControllerDraft(file.result, ownerId, draft).result.source, file.source);
+  const removed = draft.sections.map(section => section.items.at(-1).id);
+  for (const section of draft.sections) {
+    // Swapping text edits its explicitly identified rows; it must not swap their IDs.
+    [section.items[0].text, section.items[1].text] = [section.items[1].text, section.items[0].text];
+    section.items.pop();
+    draft = addControllerDraftItem(draft, section.kind);
+  }
+  for (const section of draft.sections) section.items.at(-1).text = section.kind === 'process_model' ? 'New belief' : 'New decision rule.';
+  const created = draft.sections.map(section => section.items.at(-1).id);
+  const edited = applyControllerDraft(file.result, ownerId, draft).result;
+  const saved = readControlFile('vigil.yaml', writeControlFile(file, edited.source, edited.identity));
+  for (const section of draft.sections) {
+    const detail = saved.result.graph.details.find(d => d.kind === section.kind);
+    assert.equal(detail.id, section.id);
+    assert.deepEqual([...detail.variables, ...detail.rules].map(({ id, text }) => ({ id, text })), section.items);
+  }
+  assert.ok(removed.every(id => !saved.result.identity.entries.some(e => e.id === id)));
+  assert.ok(created.every(id => saved.result.identity.entries.some(e => e.id === id)));
+  const later = addControllerDraftItem(createControllerDraft(saved.result, ownerId), 'control_algorithm');
+  assert.ok(!removed.includes(later.sections[1].items.at(-1).id));
+});
+
+test('controller row editor creates missing sections and validates entries atomically', async () => {
+  const { createControllerDraft, addControllerDraftItem, applyControllerDraft } = await import('../src/lib/control-structure/visual-edits.ts');
+  const { compileAuthoringSource } = await import('../src/lib/control-structure/resolve.ts');
+  const initial = compileAuthoringSource('Pilot (controller)\n');
+  let draft = createControllerDraft(initial, initial.graph.components[0].id);
+  draft = addControllerDraftItem(addControllerDraftItem(draft, 'process_model'), 'control_algorithm');
+  draft.sections[0].items[0].text = 'Position';
+  draft.sections[1].items[0].text = 'Stop on request.';
+  const next = applyControllerDraft(initial, initial.graph.components[0].id, draft).result;
+  assert.equal(next.graph.details.length, 2);
+  assert.equal(new Set(next.identity.entries.map(e => e.id)).size, next.identity.entries.length);
+  const cleared = createControllerDraft(next, initial.graph.components[0].id);
+  for (const section of cleared.sections) section.items = [];
+  const empty = applyControllerDraft(next, initial.graph.components[0].id, cleared).result;
+  assert.equal(empty.valid, true);
+  assert.ok(empty.identity.entries.every(entry => entry.kind === 'component'));
+  assert.equal(empty.identity.nextId, next.identity.nextId);
+  draft.sections[1].items[0].text = '';
+  assert.throws(() => applyControllerDraft(initial, initial.graph.components[0].id, draft), /Enter a rule/);
+  assert.equal(initial.graph.details.length, 0);
 });

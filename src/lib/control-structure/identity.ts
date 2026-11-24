@@ -13,21 +13,25 @@ export function mapOffset(position: number, edits: readonly TextEdit[], associat
 }
 
 export function identityAllocator(previous: IdentityState, edits: readonly TextEdit[] = []) {
-  const state: IdentityState = { namespace: previous.namespace, nextId: previous.nextId, entries: [] }
+  const state: IdentityState = { ...previous, entries: [] }
   const used = new Set<string>()
+  const reserved = new Set<string>()
+  function reserve(kind: IdentityState["entries"][number]["kind"], keys: ReadonlySet<string>) {
+    for (const entry of previous.entries) if (entry.kind === kind && keys.has(entry.key)) reserved.add(entry.id)
+  }
   function take(kind: IdentityState["entries"][number]["kind"], key: string, range: Range, editPrefix?: string): string {
     let existing = previous.entries.find(e => e.kind === kind && e.key === key && !used.has(e.id))
     if (!existing && edits.length && editPrefix) {
-      const matches = previous.entries.filter(e => e.kind === kind && e.key.startsWith(editPrefix) && !used.has(e.id) &&
+      const matches = previous.entries.filter(e => e.kind === kind && e.key.startsWith(editPrefix) && !used.has(e.id) && !reserved.has(e.id) &&
         mapOffset(e.from, edits, -1) <= range.to && mapOffset(e.to, edits, 1) >= range.from)
       if (matches.length === 1) existing = matches[0]
     }
     const id = existing?.id ?? `cs-${state.namespace}-${state.nextId++}`
     used.add(id)
-    state.entries.push({ kind, key, id, from: range.from, to: range.to })
+    state.entries.push({ ...existing, kind, key, id, from: range.from, to: range.to })
     return id
   }
-  return { state, take }
+  return { state, take, reserve }
 }
 
 /** Rename only syntactically resolved references; never prose that happens to match. */

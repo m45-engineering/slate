@@ -2871,6 +2871,62 @@ test('M45 control structures edit simple source, preserve YAML, and restore afte
   await page.screenshot({ path: 'tmp/control-structure-editor.png' });
 });
 
+test('identified controller entries and rules show persistent IDs in details and source after save and restart', async () => {
+  const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  const target = path.join(directory, 'identified-vigil.yaml');
+  await writeFile(target, content);
+  await page.evaluate(() => window.slate!.openFile('identified-vigil.yaml'));
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+  await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
+  let details = page.locator('.control-details');
+  const original = readControlFile('vigil.yaml', content);
+  const algorithm = original.result.graph.details.find(d => d.kind === 'control_algorithm')!;
+  for (let serial = 76; serial <= 95; serial++) {
+    await expect(details.locator('code').filter({ hasText: new RegExp(`^cs-vigil1-${serial}$`) })).toBeVisible();
+  }
+  for (const rule of algorithm.rules) await expect(details.locator(`[data-controller-item-id="${rule.id}"]`)).toContainText(rule.text);
+  await details.locator('[data-controller-item-id="cs-vigil1-88"] button').click();
+  let input = page.getByRole('textbox', { name: 'Control structure source', exact: true });
+  await expect(input).toBeVisible();
+  expect(await input.evaluate(el => el.value.slice(el.selectionStart, el.selectionEnd))).toBe(algorithm.rules[1].text);
+  for (let serial = 76; serial <= 95; serial++) {
+    await expect(page.locator(`[data-controller-reference-id="cs-vigil1-${serial}"]`)).toBeVisible();
+  }
+  const source = await input.inputValue();
+  const updated = source.replace('Preserve source measurement times.', 'Preserve original measurement times.');
+  await input.fill(updated);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  const reordered = updated.replace(`  ${algorithm.rules[0].text}\n  ${algorithm.rules[1].text.replace('Preserve source measurement times.', 'Preserve original measurement times.')}`, `  ${algorithm.rules[1].text.replace('Preserve source measurement times.', 'Preserve original measurement times.')}\n  ${algorithm.rules[0].text}`);
+  expect(reordered).not.toBe(updated);
+  await input.fill(reordered);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await restart();
+  details = page.locator('.control-details');
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+  await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
+  await expect(details.locator('[data-controller-item-id="cs-vigil1-88"]')).toContainText('Preserve original measurement times.');
+  const saved = readControlFile('vigil.yaml', await readFile(target, 'utf8'));
+  const savedAlgorithm = saved.result.graph.details.find(d => d.kind === 'control_algorithm')!;
+  expect(savedAlgorithm.id).toBe('cs-vigil1-86');
+  expect(savedAlgorithm.rules.map(r => r.id)).toEqual(['cs-vigil1-88', 'cs-vigil1-87', ...algorithm.rules.slice(2).map(r => r.id)]);
+  await page.screenshot({ path: 'tmp/controller-rule-details.png' });
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  input = page.getByRole('textbox', { name: 'Control structure source', exact: true });
+  await expect(input).toHaveValue(reordered);
+  for (const item of savedAlgorithm.rules) {
+    const reference = page.locator(`[data-controller-reference-id="${item.id}"]`);
+    await expect(reference).toBeVisible();
+    const offset = await reference.evaluate((el, from) => {
+      const input = document.querySelector<HTMLTextAreaElement>('[aria-label="Control structure source"]')!;
+      return el.getBoundingClientRect().top - input.getBoundingClientRect().top - (input.value.slice(0, from).split('\n').length - 1) * 26;
+    }, item.from);
+    expect(Math.abs(offset)).toBeLessThan(8);
+  }
+  await page.screenshot({ path: 'tmp/controller-rule-source.png' });
+});
+
 test('control structure Markdown fences render safely and retain their simple source', async () => {
   const source = '# Control loop\n\n```control-structure\nPilot (controller) -> Hoist (actuator): Raise\nHoist -> Pilot: State [feedback]\n```\n';
   await page.evaluate(text => window.slate!.newDocument({ name: 'loop.md', content: text }), source);
@@ -3025,6 +3081,272 @@ test('control structure canvas fills the available height and responds to window
   await page.setViewportSize({ width: 1120, height: 760 });
   await expectFilled();
   await page.screenshot({ path: 'tmp/control-full-height.png' });
+});
+
+test('controller inspection resizes from its top border without editing the document', async () => {
+  const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  const target = path.join(directory, 'resizable-controller.yaml');
+  await writeFile(target, content);
+  await page.evaluate(() => window.slate!.openFile('resizable-controller.yaml'));
+  await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
+  const details = page.locator('.control-details');
+  const canvas = page.locator('.control-diagram .diagram-viewport');
+  const handle = page.getByRole('separator', { name: 'Resize controller details', exact: true });
+  await expect(handle).toBeVisible();
+  await expect(handle).toHaveAttribute('aria-orientation', 'horizontal');
+  const initialHeight = (await details.boundingBox())!.height;
+  const initialCanvasHeight = (await canvas.boundingBox())!.height;
+  async function dragBorder(distance: number) {
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + distance, { steps: 8 });
+    await page.mouse.up();
+  }
+  await dragBorder(-180);
+  await expect.poll(async () => (await details.boundingBox())!.height).toBeGreaterThan(initialHeight + 150);
+  await expect.poll(async () => (await canvas.boundingBox())!.height).toBeLessThan(initialCanvasHeight - 150);
+  const grown = (await details.boundingBox())!.height;
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect.poll(async () => Math.abs((await details.boundingBox())!.height - grown)).toBeLessThan(3);
+  await dragBorder(120);
+  await expect.poll(async () => (await details.boundingBox())!.height).toBeLessThan(grown - 100);
+  await handle.focus();
+  const beforeKey = (await details.boundingBox())!.height;
+  await handle.press('ArrowUp');
+  await expect.poll(async () => (await details.boundingBox())!.height).toBeGreaterThan(beforeKey);
+  await page.getByRole('button', { name: 'Expand control structure', exact: true }).click();
+  await expect(handle).toBeVisible();
+  const beforeExpandedDrag = (await details.boundingBox())!.height;
+  await dragBorder(-100);
+  await expect.poll(async () => (await details.boundingBox())!.height).toBeGreaterThan(beforeExpandedDrag + 70);
+  await page.getByRole('button', { name: 'Collapse control structure', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  expect(await readFile(target, 'utf8')).toBe(content);
+  await page.screenshot({ path: 'tmp/controller-resizable-inspection.png' });
+  await page.getByRole('button', { name: 'Clear diagram selection', exact: true }).click();
+  await expect(handle).toHaveCount(0);
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+});
+
+test('inspection copy includes the complete selected controller and IDs, and reports clipboard failures', async () => {
+  const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  await page.evaluate(text => window.slate!.newDocument({ name: 'copy-controller.yaml', content: text }), content);
+  await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
+  // Exercise the bridge while leaving the user's system clipboard untouched.
+  await application.evaluate(({ clipboard }) => {
+    clipboard.writeText = text => { (clipboard as any).copiedInspection = text; };
+  });
+  const copy = page.getByRole('button', { name: 'Copy inspection contents', exact: true });
+  await expect(copy.locator('svg')).toHaveClass(/lucide-copy/);
+  await copy.click();
+  const copied = await application.evaluate(({ clipboard }) => (clipboard as any).copiedInspection);
+  expect(copied).toContain('Onboard activity control (controller) [cs-vigil1-3]');
+  const original = readControlFile('copy.yaml', content);
+  for (const detail of original.result.graph.details) {
+    expect(copied).toContain(`[${detail.id}]`);
+    for (const item of [...detail.variables, ...detail.rules]) expect(copied).toContain(`[${item.id}] ${item.text}`);
+  }
+  await expect(page.locator('.control-details [role="status"]')).toHaveText('Copied');
+  await expect(copy.locator('svg')).toHaveClass(/lucide-check/);
+  await application.evaluate(({ clipboard }) => {
+    clipboard.writeText = () => { throw new Error('Clipboard unavailable'); };
+  });
+  await copy.click();
+  await expect(page.locator('.control-details [role="status"]')).toHaveText('Could not copy. Select the text and copy it.');
+  await page.getByRole('button', { name: 'Select connection Onboard activity control → SAR data acquisition (SAR payload): Start acquisition', exact: true }).click();
+  await expect(page.locator('.control-details [role="status"]')).toHaveText('');
+});
+
+test('copy diagram produces a sharp full-layout PNG independent of zoom and pan', async () => {
+  const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  await page.evaluate(text => window.slate!.newDocument({ name: 'image.yaml', content: text }), content);
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+  const destination = path.join(process.cwd(), 'tmp/control-structure-copy.png');
+  await application.evaluate(({ clipboard, nativeImage, ClipboardItem }, destination) => {
+    const write = clipboard.write.bind(clipboard);
+    clipboard.write = async items => {
+      // Clipboard reads are lazy. Materialize each format before replacing its owner.
+      const previous = await Promise.all((await clipboard.read()).map(async item => new ClipboardItem(Object.fromEntries(
+        await Promise.all(item.types.map(async type => [type, await item.getType(type)])),
+      ))));
+      try {
+        await write(items);
+        const copied = (await clipboard.read()).find(item => item.types.includes('image/png'))!;
+        const png = await copied.getType('image/png');
+        const image = nativeImage.createFromBuffer(Buffer.from(await png.arrayBuffer()));
+        (clipboard as any).copiedDiagram = image;
+        process.getBuiltinModule('fs').writeFileSync(destination, image.toPNG());
+      } catch (error) {
+        (clipboard as any).copyError = String(error);
+        throw error;
+      } finally {
+        if (previous.length) await write(previous);
+        else clipboard.clear();
+      }
+    };
+  }, destination);
+  await page.getByRole('button', { name: 'Copy diagram as image', exact: true }).click();
+  await expect.poll(() => application.evaluate(({ clipboard }) => (clipboard as any).copyError ?? Boolean((clipboard as any).copiedDiagram))).toBe(true);
+  await expect(page.locator('.control-copy-status')).toHaveText('Image copied');
+  const image = await application.evaluate(({ clipboard }) => {
+    const image = (clipboard as any).copiedDiagram;
+    const bitmap = image.toBitmap();
+    let ink = 0;
+    for (let i = 0; i < bitmap.length; i += 4) if (bitmap[i] < 240 || bitmap[i + 1] < 240 || bitmap[i + 2] < 240) ink++;
+    return { ...image.getSize(), ink, digest: process.getBuiltinModule('crypto').createHash('sha256').update(bitmap).digest('hex') };
+  });
+  expect(Math.max(image.width, image.height)).toBeGreaterThan(3000);
+  expect(image.ink).toBeGreaterThan(image.width * image.height * 0.005);
+  await page.getByRole('button', { name: 'Zoom in diagram', exact: true }).click();
+  const canvas = page.getByRole('group', { name: 'Diagram canvas', exact: true });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 5, box.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 45, box.y + 45, { steps: 4 });
+  await page.mouse.up();
+  await page.getByRole('button', { name: 'Copy diagram as image', exact: true }).click();
+  await expect(page.locator('.control-copy-status')).toHaveText('Image copied');
+  expect(await application.evaluate(({ clipboard }) => process.getBuiltinModule('crypto').createHash('sha256').update((clipboard as any).copiedDiagram.toBitmap()).digest('hex'))).toBe(image.digest);
+});
+
+test('selecting, resizing, and applying component or edge edits preserves diagram zoom and pan', async () => {
+  const content = 'Pilot (controller) -> Hoist (actuator): Raise\nPilot process model:\n  Load position\n';
+  await page.evaluate(text => window.slate!.newDocument({ name: 'steady-view.yaml', content: text }), controlDocument(content));
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+  const drawing = page.locator('.control-preview .diagram-canvas');
+  const viewport = page.getByRole('group', { name: 'Diagram canvas', exact: true });
+  await page.getByRole('button', { name: 'Zoom in diagram', exact: true }).click();
+  await viewport.focus();
+  await viewport.press('ArrowRight');
+  await viewport.press('ArrowDown');
+  const transform = await drawing.evaluate(el => el.style.transform);
+  const zoom = await page.getByRole('status', { name: 'Diagram zoom' }).textContent();
+  // Keyboard selection avoids the browser scrolling a panned shape into view.
+  await page.getByRole('button', { name: 'Select component Pilot', exact: true }).press('Enter');
+  await expect(page.locator('.control-details')).toBeVisible();
+  await expect.poll(() => drawing.evaluate(el => el.style.transform)).toBe(transform);
+  await expect(page.getByRole('status', { name: 'Diagram zoom' })).toHaveText(zoom!);
+  await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Component name', exact: true }).fill('Crew');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Select component Crew', exact: true })).toHaveCount(1);
+  await expect.poll(() => drawing.evaluate(el => el.style.transform)).toBe(transform);
+  await expect(page.getByRole('status', { name: 'Diagram zoom' })).toHaveText(zoom!);
+  await page.getByRole('button', { name: 'Select connection Crew → Hoist: Raise', exact: true }).press('Enter');
+  await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Connection label', exact: true }).fill('Raise carefully');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Select connection Crew → Hoist: Raise carefully', exact: true })).toHaveCount(1);
+  await expect.poll(() => drawing.evaluate(el => el.style.transform)).toBe(transform);
+  await expect(page.getByRole('status', { name: 'Diagram zoom' })).toHaveText(zoom!);
+  const handle = page.getByRole('separator', { name: 'Resize controller details', exact: true });
+  await handle.focus();
+  await handle.press('ArrowUp');
+  await expect.poll(() => drawing.evaluate(el => el.style.transform)).toBe(transform);
+  await page.getByRole('button', { name: 'Clear diagram selection', exact: true }).click();
+  await expect.poll(() => drawing.evaluate(el => el.style.transform)).toBe(transform);
+  await page.getByRole('button', { name: 'Fit diagram', exact: true }).click();
+  await expect.poll(() => drawing.evaluate(el => el.style.transform)).not.toBe(transform);
+  await expect(page.getByRole('status', { name: 'Diagram zoom' })).toHaveText('100%');
+});
+
+test('edge labels rename visually, undo, save, and reopen with stable IDs', async () => {
+  const content = controlDocument('Pilot (controller) -> Hoist (actuator): Raise\nPilot -> Hoist: Stop\n');
+  const target = path.join(directory, 'rename-edge.yaml');
+  await writeFile(target, content);
+  await page.evaluate(() => window.slate!.openFile('rename-edge.yaml'));
+  const original = readControlFile(target, content);
+  const edge = original.result.graph.connections[0];
+  await page.getByRole('button', { name: 'Select connection Pilot → Hoist: Raise', exact: true }).click();
+  await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Rename connection label', exact: true });
+  await dialog.getByRole('textbox', { name: 'Connection label', exact: true }).fill('Raise: gently');
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Select connection Pilot → Hoist: Raise: gently', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Select connection Pilot → Hoist: Raise', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  const saved = readControlFile(target, await readFile(target, 'utf8'));
+  expect(saved.result.graph.connections[0].id).toBe(edge.id);
+  expect(saved.result.graph.connections[0].signalId).toBe(edge.signalId);
+  expect(saved.result.graph.connections[1].label).toBe('Stop');
+  await restart();
+  await expect(page.getByRole('button', { name: 'Select connection Pilot → Hoist: Raise: gently', exact: true })).toBeVisible();
+});
+
+test('controller dialog shows both identified sections, resizes, and applies row additions and removals together', async () => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  const target = path.join(directory, 'edit-controller.yaml');
+  await writeFile(target, content);
+  await page.evaluate(() => window.slate!.openFile('edit-controller.yaml'));
+  await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
+  const original = readControlFile(target, content);
+  await page.getByRole('button', { name: 'Edit controller details', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Edit controller details', exact: true });
+  const model = dialog.getByRole('region', { name: 'Process model', exact: true });
+  const algorithm = dialog.getByRole('region', { name: 'Control algorithm', exact: true });
+  await expect(model).toBeVisible();
+  await expect(algorithm).toBeVisible();
+  expect((await algorithm.boundingBox())!.x).toBeGreaterThan((await model.boundingBox())!.x);
+  await expect(model.getByText('cs-vigil1-76', { exact: true })).toBeVisible();
+  await expect(algorithm.getByText('cs-vigil1-86', { exact: true })).toBeVisible();
+  await expect(dialog.locator('[data-edit-item-id]')).toHaveCount(18);
+  await expect(dialog.getByRole('textbox')).toHaveCount(0);
+  await expect(dialog.locator('[data-edit-item-id]').first()).toHaveCSS('border-bottom-width', '0px');
+  await expect(dialog).toHaveCSS('resize', 'both');
+  const beforeResize = (await dialog.boundingBox())!;
+  await page.mouse.move(beforeResize.x + beforeResize.width - 2, beforeResize.y + beforeResize.height - 2);
+  await page.mouse.down();
+  await page.mouse.move(beforeResize.x + beforeResize.width + 78, beforeResize.y + beforeResize.height + 58, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await dialog.boundingBox())!.width).toBeGreaterThan(beforeResize.width + 30);
+  await dialog.getByRole('button', { name: 'Edit cs-vigil1-77', exact: true }).click();
+  await expect(dialog.getByRole('textbox')).toHaveCount(1);
+  await dialog.getByRole('textbox', { name: 'Process model entry cs-vigil1-77', exact: true }).fill('Canceled change');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Edit controller details', exact: true }).click();
+  const created: string[] = [];
+  const removed: string[] = [];
+  for (const section of [model, algorithm]) {
+    const isModel = section === model;
+    const detail = original.result.graph.details.find(d => d.kind === (isModel ? 'process_model' : 'control_algorithm'))!;
+    const items = isModel ? detail.variables : detail.rules;
+    for (const item of items.slice(0, 2)) {
+      await section.getByRole('button', { name: `Edit ${item.id}`, exact: true }).click();
+      await section.locator(`[data-edit-item-id="${item.id}"] textarea`).fill(item.text + ' Updated.');
+    }
+    await section.getByRole('button', { name: isModel ? 'Add entry' : 'Add rule', exact: true }).click();
+    const added = section.locator('[data-edit-item-id]').last();
+    created.push((await added.getAttribute('data-edit-item-id'))!);
+    await expect(added.locator('textarea')).toBeFocused();
+    await added.locator('textarea').fill(isModel ? 'New controller belief' : 'New decision rule.');
+    removed.push(items.at(-1)!.id);
+    await section.getByRole('button', { name: `Remove ${items.at(-1)!.id}`, exact: true }).click();
+  }
+  await page.screenshot({ path: 'tmp/controller-identified-dialog.png' });
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  for (const id of created) await expect(page.locator(`[data-controller-item-id="${id}"]`)).toHaveCount(1);
+  for (const id of removed) await expect(page.locator(`[data-controller-item-id="${id}"]`)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.locator('[data-controller-item-id="cs-vigil1-85"]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  const saved = readControlFile(target, await readFile(target, 'utf8'));
+  for (const id of removed) expect(saved.result.identity.entries.some(item => item.id === id)).toBe(false);
+  for (const id of created) expect(saved.result.identity.entries.some(item => item.id === id)).toBe(true);
+  expect(saved.result.identity.nextId).toBe(original.result.identity.nextId + 2);
+  await restart();
+  await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit controller details', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit cs-vigil1-88', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Algorithm rule cs-vigil1-88', exact: true })).toHaveValue(/Updated\.$/);
 });
 
 test('control nodes separate role badges from names and emphasize their own rounded borders', async () => {

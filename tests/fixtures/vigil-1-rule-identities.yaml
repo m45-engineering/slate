@@ -1,0 +1,776 @@
+schemaVersion: m45-control-structure/v1
+id: vigil-1-control-structure
+title: Vigil-1 — acquisition and delivery control structure
+description: "Control responsibilities for Vigil-1 SAR acquisition and delivery. Source records: V1-PROTECTION revision 10 (03-protection-model.md) and V1-ALLOCATION revision 7 (05-design-allocation.md)."
+elements:
+  - id: cs-vigil1-1
+    label: Imagery user
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-2
+    label: Mission operations
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-3
+    label: Onboard activity control
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+      authoringDetails:
+        version: 1
+        processModel:
+          id: cs-vigil1-76
+          variables:
+            - id: cs-vigil1-77
+              text: Requested maneuver or acquisition, including its parameters, required attitude, and planned duration
+            - id: cs-vigil1-78
+              text: Applicable attitude, power, and thermal limits
+            - id: cs-vigil1-79
+              text: Latest reported attitude, wheel state, and capability for the requested activity
+            - id: cs-vigil1-80
+              text: Latest configured condition-check results from LC
+            - id: cs-vigil1-81
+              text: Source measurement times and validity of the information used in the permission decision
+            - id: cs-vigil1-82
+              text: Latest reported power and thermal state
+            - id: cs-vigil1-83
+              text: "Assessed ability to remain within power and thermal limits throughout acquisition: supported, unsupported, or unknown"
+            - id: cs-vigil1-84
+              text: Last commanded action and whether its effect has been confirmed by feedback
+            - id: cs-vigil1-85
+              text: Reported maneuver and acquisition execution state, including when that state is unknown
+        controlAlgorithm:
+          id: cs-vigil1-86
+          text: |-
+            Update the process model from received requests and feedback. Keep the requested activity, commanded action, and reported execution state distinct.
+            Preserve source measurement times. Receiving or rechecking an old measurement does not make it new.
+            Check the validity and age of required health information. Missing, invalid, or more-than-two-second-old information cannot establish permission.
+            Assess capability for the requested maneuver and required acquisition attitude using the reported capability and activity parameters. A passing LC condition check alone does not establish that capability.
+            Assess whether the planned acquisition can remain within power and thermal limits using reported state, activity mode, duration, expected resource demand, and applicable limits. The demand estimates and prediction method are unresolved; keep this assessment unknown until it is supported.
+            Issue a permitted-maneuver or start-acquisition command only when the applicable permission requirements are established. Do not authorize the requested activity when required capability, information, or feasibility remains unknown. Report the restriction or missing information to mission operations.
+            Apply the same permission requirements to scheduled, direct, and recovery commands.
+            Reassess permission during the activity as new information arrives and existing information ages. If permission is lost, command a restriction or stop and report the reason to mission operations.
+            Use feedback to confirm execution and the effects of restriction or stop commands. Command acceptance alone does not establish that an activity started, stopped, or completed. Report unknown execution state when the feedback does not establish it.
+          rules:
+            - id: cs-vigil1-87
+              text: Update the process model from received requests and feedback. Keep the requested activity, commanded action, and reported execution state distinct.
+            - id: cs-vigil1-88
+              text: Preserve source measurement times. Receiving or rechecking an old measurement does not make it new.
+            - id: cs-vigil1-89
+              text: Check the validity and age of required health information. Missing, invalid, or more-than-two-second-old information cannot establish permission.
+            - id: cs-vigil1-90
+              text: Assess capability for the requested maneuver and required acquisition attitude using the reported capability and activity parameters. A passing LC condition check alone does not establish that capability.
+            - id: cs-vigil1-91
+              text: Assess whether the planned acquisition can remain within power and thermal limits using reported state, activity mode, duration, expected resource demand, and applicable limits. The demand estimates and prediction method are unresolved; keep this assessment unknown until it is supported.
+            - id: cs-vigil1-92
+              text: Issue a permitted-maneuver or start-acquisition command only when the applicable permission requirements are established. Do not authorize the requested activity when required capability, information, or feasibility remains unknown. Report the restriction or missing information to mission operations.
+            - id: cs-vigil1-93
+              text: Apply the same permission requirements to scheduled, direct, and recovery commands.
+            - id: cs-vigil1-94
+              text: Reassess permission during the activity as new information arrives and existing information ages. If permission is lost, command a restriction or stop and report the reason to mission operations.
+            - id: cs-vigil1-95
+              text: Use feedback to confirm execution and the effects of restriction or stop commands. Command acceptance alone does not establish that an activity started, stopped, or completed. Report unknown execution state when the feedback does not establish it.
+  - id: cs-vigil1-4
+    label: Stored Command (SC)
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-5
+    label: Limit Checker (LC)
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-6
+    label: Attitude control
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-7
+    label: SAR data acquisition (SAR payload)
+    kind: controlled_process
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-8
+    label: Downlink reception and data transfer (ground station)
+    kind: controlled_process
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-9
+    label: Dedicated ground product processing
+    kind: controller
+    annotations:
+      authoringUnclassified: false
+  - id: cs-vigil1-71
+    label: Spacecraft health and status reporting
+    kind: sensor
+    annotations:
+      authoringUnclassified: false
+relationships:
+  - id: cs-vigil1-10
+    label: Target, deadline, and image acceptance criteria
+    kind: control_action
+    sourceId: cs-vigil1-1
+    targetId: cs-vigil1-2
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-12
+    label: Request disposition and predicted delivery
+    kind: feedback
+    sourceId: cs-vigil1-2
+    targetId: cs-vigil1-1
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-14
+    label: Acquisition plan and operating limits
+    kind: control_action
+    sourceId: cs-vigil1-2
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-66
+    label: Plan acceptance, actual execution state, and restriction reasons
+    kind: feedback
+    sourceId: cs-vigil1-3
+    targetId: cs-vigil1-2
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-16
+    label: Stored command sequences and timing
+    kind: control_action
+    sourceId: cs-vigil1-2
+    targetId: cs-vigil1-4
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-18
+    label: Scheduled and protective commands
+    kind: control_action
+    sourceId: cs-vigil1-4
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-20
+    label: Protective sequence request
+    kind: control_action
+    sourceId: cs-vigil1-5
+    targetId: cs-vigil1-4
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-22
+    label: Condition-check results, source measurement time, and validity
+    kind: feedback
+    sourceId: cs-vigil1-5
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-24
+    label: Data receipt and validity faults
+    kind: feedback
+    sourceId: cs-vigil1-3
+    targetId: cs-vigil1-5
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-26
+    label: Permitted maneuver and required attitude
+    kind: control_action
+    sourceId: cs-vigil1-3
+    targetId: cs-vigil1-6
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-28
+    label: Attitude, wheel state, and capability
+    kind: feedback
+    sourceId: cs-vigil1-6
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-58
+    label: Start acquisition
+    kind: control_action
+    sourceId: cs-vigil1-3
+    targetId: cs-vigil1-7
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-60
+    label: Restrict or stop acquisition
+    kind: control_action
+    sourceId: cs-vigil1-3
+    targetId: cs-vigil1-7
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-62
+    label: Actual acquisition state, progress, completion, or interruption
+    kind: feedback
+    sourceId: cs-vigil1-7
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-34
+    label: Reserved contact and expected data volume
+    kind: control_action
+    sourceId: cs-vigil1-2
+    targetId: cs-vigil1-8
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-36
+    label: Contact availability and reception status
+    kind: feedback
+    sourceId: cs-vigil1-8
+    targetId: cs-vigil1-2
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-38
+    label: Processing priority, capacity allocation, and acceptance criteria
+    kind: control_action
+    sourceId: cs-vigil1-2
+    targetId: cs-vigil1-9
+    annotations:
+      authoringKind: control
+  - id: cs-vigil1-40
+    label: Acquisition data and context
+    kind: data_flow
+    sourceId: cs-vigil1-7
+    targetId: cs-vigil1-8
+    annotations:
+      authoringKind: information
+  - id: cs-vigil1-42
+    label: Received data and completeness status
+    kind: data_flow
+    sourceId: cs-vigil1-8
+    targetId: cs-vigil1-9
+    annotations:
+      authoringKind: information
+  - id: cs-vigil1-44
+    label: Data receipt and processing readiness
+    kind: data_flow
+    sourceId: cs-vigil1-9
+    targetId: cs-vigil1-8
+    annotations:
+      authoringKind: information
+  - id: cs-vigil1-46
+    label: Processing readiness, progress, predicted completion, and acceptance results
+    kind: feedback
+    sourceId: cs-vigil1-9
+    targetId: cs-vigil1-2
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-48
+    label: Product, quality limitations, and delivery status
+    kind: data_flow
+    sourceId: cs-vigil1-9
+    targetId: cs-vigil1-1
+    annotations:
+      authoringKind: information
+  - id: cs-vigil1-50
+    label: Receipt and usability assessment
+    kind: feedback
+    sourceId: cs-vigil1-1
+    targetId: cs-vigil1-9
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-69
+    label: Attitude and wheel telemetry, measurement time, and validity
+    kind: feedback
+    sourceId: cs-vigil1-6
+    targetId: cs-vigil1-5
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-72
+    label: Power and thermal measurements, source measurement times, and validity
+    kind: feedback
+    sourceId: cs-vigil1-71
+    targetId: cs-vigil1-5
+    annotations:
+      authoringKind: feedback
+  - id: cs-vigil1-74
+    label: Power and thermal state, source measurement times, and validity
+    kind: feedback
+    sourceId: cs-vigil1-71
+    targetId: cs-vigil1-3
+    annotations:
+      authoringKind: feedback
+metadata:
+  authoring:
+    version: m45.control-structure-authoring.v1
+    grammarVersion: "0.1"
+    source: |
+      # Scope: These process boxes represent activities; internal payload and ground-station controllers are not shown.
+
+      # Mission coordination
+      Imagery user (controller) -> Mission operations (controller): Target, deadline, and image acceptance criteria
+      Mission operations -> Imagery user: Request disposition and predicted delivery [feedback]
+
+      # Onboard control
+      Mission operations -> Onboard activity control (controller): Acquisition plan and operating limits
+      Onboard activity control -> Mission operations: Plan acceptance, actual execution state, and restriction reasons [feedback]
+      Mission operations -> "Stored Command (SC)" (controller): Stored command sequences and timing
+      "Stored Command (SC)" -> Onboard activity control: Scheduled and protective commands
+      "Limit Checker (LC)" (controller) -> "Stored Command (SC)": Protective sequence request
+      # LC reports configured condition checks; onboard activity control decides permission.
+      "Limit Checker (LC)" -> Onboard activity control: Condition-check results, source measurement time, and validity [feedback]
+      Onboard activity control -> "Limit Checker (LC)": Data receipt and validity faults [feedback]
+      Onboard activity control -> Attitude control (controller): Permitted maneuver and required attitude
+      Attitude control -> Onboard activity control: Attitude, wheel state, and capability [feedback]
+      # Telemetry-source assumption: Attitude control includes its wheel-device interface.
+      # The detailed publisher and transport are not established by the supplied artifacts.
+      Attitude control -> "Limit Checker (LC)": Attitude and wheel telemetry, measurement time, and validity [feedback]
+      # Chosen functional allocation: measurements are supplied by the Flight Computer reporting function.
+      # Detailed publishers, transport, measurement coverage, and validity handling remain unverified.
+      Spacecraft health and status reporting (sensor) -> "Limit Checker (LC)": Power and thermal measurements, source measurement times, and validity [feedback]
+      Spacecraft health and status reporting -> Onboard activity control: Power and thermal state, source measurement times, and validity [feedback]
+      Onboard activity control -> "SAR data acquisition (SAR payload)" (process): Start acquisition
+      Onboard activity control -> "SAR data acquisition (SAR payload)": Restrict or stop acquisition
+      "SAR data acquisition (SAR payload)" -> Onboard activity control: Actual acquisition state, progress, completion, or interruption [feedback]
+
+      # Ground delivery
+      Mission operations -> "Downlink reception and data transfer (ground station)" (process): Reserved contact and expected data volume
+      "Downlink reception and data transfer (ground station)" -> Mission operations: Contact availability and reception status [feedback]
+      Mission operations -> Dedicated ground product processing (controller): Processing priority, capacity allocation, and acceptance criteria
+      "SAR data acquisition (SAR payload)" -> "Downlink reception and data transfer (ground station)": Acquisition data and context [information]
+      "Downlink reception and data transfer (ground station)" -> Dedicated ground product processing: Received data and completeness status [information]
+      Dedicated ground product processing -> "Downlink reception and data transfer (ground station)": Data receipt and processing readiness [information]
+      Dedicated ground product processing -> Mission operations: Processing readiness, progress, predicted completion, and acceptance results [feedback]
+      Dedicated ground product processing -> Imagery user: Product, quality limitations, and delivery status [information]
+      Imagery user -> Dedicated ground product processing: Receipt and usability assessment [feedback]
+
+      # Onboard activity control internals
+      # Functional design derived from V1-PROTECTION; not a verified implementation model.
+      # Power and thermal prediction inputs and method remain unresolved.
+      Onboard activity control process model:
+        Requested maneuver or acquisition, including its parameters, required attitude, and planned duration
+        Applicable attitude, power, and thermal limits
+        Latest reported attitude, wheel state, and capability for the requested activity
+        Latest configured condition-check results from LC
+        Source measurement times and validity of the information used in the permission decision
+        Latest reported power and thermal state
+        Assessed ability to remain within power and thermal limits throughout acquisition: supported, unsupported, or unknown
+        Last commanded action and whether its effect has been confirmed by feedback
+        Reported maneuver and acquisition execution state, including when that state is unknown
+
+      Onboard activity control control algorithm:
+        Update the process model from received requests and feedback. Keep the requested activity, commanded action, and reported execution state distinct.
+        Preserve source measurement times. Receiving or rechecking an old measurement does not make it new.
+        Check the validity and age of required health information. Missing, invalid, or more-than-two-second-old information cannot establish permission.
+        Assess capability for the requested maneuver and required acquisition attitude using the reported capability and activity parameters. A passing LC condition check alone does not establish that capability.
+        Assess whether the planned acquisition can remain within power and thermal limits using reported state, activity mode, duration, expected resource demand, and applicable limits. The demand estimates and prediction method are unresolved; keep this assessment unknown until it is supported.
+        Issue a permitted-maneuver or start-acquisition command only when the applicable permission requirements are established. Do not authorize the requested activity when required capability, information, or feasibility remains unknown. Report the restriction or missing information to mission operations.
+        Apply the same permission requirements to scheduled, direct, and recovery commands.
+        Reassess permission during the activity as new information arrives and existing information ages. If permission is lost, command a restriction or stop and report the reason to mission operations.
+        Use feedback to confirm execution and the effects of restriction or stop commands. Command acceptance alone does not establish that an activity started, stopped, or completed. Report unknown execution state when the feedback does not establish it.
+    identity:
+      namespace: vigil1
+      nextId: 96
+      entries:
+        - from: 138
+          to: 150
+          id: cs-vigil1-1
+          key: Imagery user
+          kind: component
+        - from: 167
+          to: 185
+          id: cs-vigil1-2
+          key: Mission operations
+          kind: component
+        - from: 379
+          to: 403
+          id: cs-vigil1-3
+          key: Onboard activity control
+          kind: component
+        - from: 602
+          to: 623
+          id: cs-vigil1-4
+          key: Stored Command (SC)
+          kind: component
+        - from: 759
+          to: 779
+          id: cs-vigil1-5
+          key: Limit Checker (LC)
+          kind: component
+        - from: 1180
+          to: 1196
+          id: cs-vigil1-6
+          key: Attitude control
+          kind: component
+        - from: 2156
+          to: 2192
+          id: cs-vigil1-7
+          key: SAR data acquisition (SAR payload)
+          kind: component
+        - from: 2499
+          to: 2554
+          id: cs-vigil1-8
+          key: Downlink reception and data transfer (ground station)
+          kind: component
+        - from: 2762
+          to: 2797
+          id: cs-vigil1-9
+          key: Dedicated ground product processing
+          kind: component
+        - from: 138
+          to: 247
+          id: cs-vigil1-10
+          key: '["cs-vigil1-1","cs-vigil1-2","control"]:Target, deadline, and image acceptance criteria'
+          kind: connection
+        - from: 138
+          to: 247
+          id: cs-vigil1-11
+          key: cs-vigil1-10
+          kind: signal
+        - from: 248
+          to: 337
+          id: cs-vigil1-12
+          key: '["cs-vigil1-2","cs-vigil1-1","feedback"]:Request disposition and predicted delivery'
+          kind: connection
+        - from: 248
+          to: 337
+          id: cs-vigil1-13
+          key: cs-vigil1-12
+          kind: signal
+        - from: 357
+          to: 455
+          id: cs-vigil1-14
+          key: '["cs-vigil1-2","cs-vigil1-3","control"]:Acquisition plan and operating limits'
+          kind: connection
+        - from: 357
+          to: 455
+          id: cs-vigil1-15
+          key: cs-vigil1-14
+          kind: signal
+        - from: 456
+          to: 579
+          id: cs-vigil1-66
+          key: '["cs-vigil1-3","cs-vigil1-2","feedback"]:Plan acceptance, actual execution state, and restriction reasons'
+          kind: connection
+        - from: 456
+          to: 579
+          id: cs-vigil1-67
+          key: cs-vigil1-66
+          kind: signal
+        - from: 580
+          to: 673
+          id: cs-vigil1-16
+          key: '["cs-vigil1-2","cs-vigil1-4","control"]:Stored command sequences and timing'
+          kind: connection
+        - from: 580
+          to: 673
+          id: cs-vigil1-17
+          key: cs-vigil1-16
+          kind: signal
+        - from: 674
+          to: 758
+          id: cs-vigil1-18
+          key: '["cs-vigil1-4","cs-vigil1-3","control"]:Scheduled and protective commands'
+          kind: connection
+        - from: 674
+          to: 758
+          id: cs-vigil1-19
+          key: cs-vigil1-18
+          kind: signal
+        - from: 759
+          to: 846
+          id: cs-vigil1-20
+          key: '["cs-vigil1-5","cs-vigil1-4","control"]:Protective sequence request'
+          kind: connection
+        - from: 759
+          to: 846
+          id: cs-vigil1-21
+          key: cs-vigil1-20
+          kind: signal
+        - from: 934
+          to: 1057
+          id: cs-vigil1-22
+          key: '["cs-vigil1-5","cs-vigil1-3","feedback"]:Condition-check results, source measurement time, and validity'
+          kind: connection
+        - from: 934
+          to: 1057
+          id: cs-vigil1-23
+          key: cs-vigil1-22
+          kind: signal
+        - from: 1058
+          to: 1151
+          id: cs-vigil1-24
+          key: '["cs-vigil1-3","cs-vigil1-5","feedback"]:Data receipt and validity faults'
+          kind: connection
+        - from: 1058
+          to: 1151
+          id: cs-vigil1-25
+          key: cs-vigil1-24
+          kind: signal
+        - from: 1152
+          to: 1251
+          id: cs-vigil1-26
+          key: '["cs-vigil1-3","cs-vigil1-6","control"]:Permitted maneuver and required attitude'
+          kind: connection
+        - from: 1152
+          to: 1251
+          id: cs-vigil1-27
+          key: cs-vigil1-26
+          kind: signal
+        - from: 1252
+          to: 1346
+          id: cs-vigil1-28
+          key: '["cs-vigil1-6","cs-vigil1-3","feedback"]:Attitude, wheel state, and capability'
+          kind: connection
+        - from: 1252
+          to: 1346
+          id: cs-vigil1-29
+          key: cs-vigil1-28
+          kind: signal
+        - from: 2128
+          to: 2221
+          id: cs-vigil1-58
+          key: '["cs-vigil1-3","cs-vigil1-7","control"]:Start acquisition'
+          kind: connection
+        - from: 2128
+          to: 2221
+          id: cs-vigil1-59
+          key: cs-vigil1-58
+          kind: signal
+        - from: 2222
+          to: 2316
+          id: cs-vigil1-60
+          key: '["cs-vigil1-3","cs-vigil1-7","control"]:Restrict or stop acquisition'
+          kind: connection
+        - from: 2222
+          to: 2316
+          id: cs-vigil1-61
+          key: cs-vigil1-60
+          kind: signal
+        - from: 2317
+          to: 2457
+          id: cs-vigil1-62
+          key: '["cs-vigil1-7","cs-vigil1-3","feedback"]:Actual acquisition state, progress, completion, or interruption'
+          kind: connection
+        - from: 2317
+          to: 2457
+          id: cs-vigil1-63
+          key: cs-vigil1-62
+          kind: signal
+        - from: 2477
+          to: 2607
+          id: cs-vigil1-34
+          key: '["cs-vigil1-2","cs-vigil1-8","control"]:Reserved contact and expected data volume'
+          kind: connection
+        - from: 2477
+          to: 2607
+          id: cs-vigil1-35
+          key: cs-vigil1-34
+          kind: signal
+        - from: 2608
+          to: 2739
+          id: cs-vigil1-36
+          key: '["cs-vigil1-8","cs-vigil1-2","feedback"]:Contact availability and reception status'
+          kind: connection
+        - from: 2608
+          to: 2739
+          id: cs-vigil1-37
+          key: cs-vigil1-36
+          kind: signal
+        - from: 2740
+          to: 2877
+          id: cs-vigil1-38
+          key: '["cs-vigil1-2","cs-vigil1-9","control"]:Processing priority, capacity allocation, and acceptance criteria'
+          kind: connection
+        - from: 2740
+          to: 2877
+          id: cs-vigil1-39
+          key: cs-vigil1-38
+          kind: signal
+        - from: 2878
+          to: 3017
+          id: cs-vigil1-40
+          key: '["cs-vigil1-7","cs-vigil1-8","information"]:Acquisition data and context'
+          kind: connection
+        - from: 2878
+          to: 3017
+          id: cs-vigil1-41
+          key: cs-vigil1-40
+          kind: signal
+        - from: 3018
+          to: 3165
+          id: cs-vigil1-42
+          key: '["cs-vigil1-8","cs-vigil1-9","information"]:Received data and completeness status'
+          kind: connection
+        - from: 3018
+          to: 3165
+          id: cs-vigil1-43
+          key: cs-vigil1-42
+          kind: signal
+        - from: 3166
+          to: 3313
+          id: cs-vigil1-44
+          key: '["cs-vigil1-9","cs-vigil1-8","information"]:Data receipt and processing readiness'
+          kind: connection
+        - from: 3166
+          to: 3313
+          id: cs-vigil1-45
+          key: cs-vigil1-44
+          kind: signal
+        - from: 3314
+          to: 3460
+          id: cs-vigil1-46
+          key: '["cs-vigil1-9","cs-vigil1-2","feedback"]:Processing readiness, progress, predicted completion, and acceptance results'
+          kind: connection
+        - from: 3314
+          to: 3460
+          id: cs-vigil1-47
+          key: cs-vigil1-46
+          kind: signal
+        - from: 3461
+          to: 3577
+          id: cs-vigil1-48
+          key: '["cs-vigil1-9","cs-vigil1-1","information"]:Product, quality limitations, and delivery status'
+          kind: connection
+        - from: 3461
+          to: 3577
+          id: cs-vigil1-49
+          key: cs-vigil1-48
+          kind: signal
+        - from: 3578
+          to: 3674
+          id: cs-vigil1-50
+          key: '["cs-vigil1-1","cs-vigil1-9","feedback"]:Receipt and usability assessment'
+          kind: connection
+        - from: 3578
+          to: 3674
+          id: cs-vigil1-51
+          key: cs-vigil1-50
+          kind: signal
+        - from: 1518
+          to: 1631
+          id: cs-vigil1-69
+          key: '["cs-vigil1-6","cs-vigil1-5","feedback"]:Attitude and wheel telemetry, measurement time, and validity'
+          kind: connection
+        - from: 1518
+          to: 1631
+          id: cs-vigil1-70
+          key: cs-vigil1-69
+          kind: signal
+        - from: 1830
+          to: 1868
+          id: cs-vigil1-71
+          key: Spacecraft health and status reporting
+          kind: component
+        - from: 1830
+          to: 1984
+          id: cs-vigil1-72
+          key: '["cs-vigil1-71","cs-vigil1-5","feedback"]:Power and thermal measurements, source measurement times, and validity'
+          kind: connection
+        - from: 1830
+          to: 1984
+          id: cs-vigil1-73
+          key: cs-vigil1-72
+          kind: signal
+        - from: 1985
+          to: 2127
+          id: cs-vigil1-74
+          key: '["cs-vigil1-71","cs-vigil1-3","feedback"]:Power and thermal state, source measurement times, and validity'
+          kind: connection
+        - from: 1985
+          to: 2127
+          id: cs-vigil1-75
+          key: cs-vigil1-74
+          kind: signal
+        - from: 3866
+          to: 4614
+          id: cs-vigil1-76
+          key: cs-vigil1-3:process_model
+          kind: process_model
+        - from: 3908
+          to: 4008
+          id: cs-vigil1-77
+          key: cs-vigil1-76:Requested maneuver or acquisition, including its parameters, required attitude, and planned duration
+          kind: variable
+        - from: 4011
+          to: 4057
+          id: cs-vigil1-78
+          key: cs-vigil1-76:Applicable attitude, power, and thermal limits
+          kind: variable
+        - from: 4060
+          to: 4140
+          id: cs-vigil1-79
+          key: cs-vigil1-76:Latest reported attitude, wheel state, and capability for the requested activity
+          kind: variable
+        - from: 4143
+          to: 4192
+          id: cs-vigil1-80
+          key: cs-vigil1-76:Latest configured condition-check results from LC
+          kind: variable
+        - from: 4195
+          to: 4283
+          id: cs-vigil1-81
+          key: cs-vigil1-76:Source measurement times and validity of the information used in the permission decision
+          kind: variable
+        - from: 4286
+          to: 4325
+          id: cs-vigil1-82
+          key: cs-vigil1-76:Latest reported power and thermal state
+          kind: variable
+        - from: 4328
+          to: 4445
+          id: cs-vigil1-83
+          key: "cs-vigil1-76:Assessed ability to remain within power and thermal limits throughout acquisition: supported, unsupported, or unknown"
+          kind: variable
+        - from: 4448
+          to: 4523
+          id: cs-vigil1-84
+          key: cs-vigil1-76:Last commanded action and whether its effect has been confirmed by feedback
+          kind: variable
+        - from: 4526
+          to: 4613
+          id: cs-vigil1-85
+          key: cs-vigil1-76:Reported maneuver and acquisition execution state, including when that state is unknown
+          kind: variable
+        - from: 4615
+          to: 6395
+          id: cs-vigil1-86
+          key: cs-vigil1-3:control_algorithm
+          kind: control_algorithm
+        - from: 4661
+          to: 4808
+          id: cs-vigil1-87
+          key: cs-vigil1-86:["Update the process model from received requests and feedback. Keep the requested activity, commanded action, and reported execution state distinct.",1]
+          kind: rule
+        - from: 4811
+          to: 4910
+          id: cs-vigil1-88
+          key: cs-vigil1-86:["Preserve source measurement times. Receiving or rechecking an old measurement does not make it new.",1]
+          kind: rule
+        - from: 4913
+          to: 5058
+          id: cs-vigil1-89
+          key: cs-vigil1-86:["Check the validity and age of required health information. Missing, invalid, or more-than-two-second-old information cannot establish permission.",1]
+          kind: rule
+        - from: 5061
+          to: 5265
+          id: cs-vigil1-90
+          key: cs-vigil1-86:["Assess capability for the requested maneuver and required acquisition attitude using the reported capability and activity parameters. A passing LC condition check alone does not establish that capability.",1]
+          kind: rule
+        - from: 5268
+          to: 5556
+          id: cs-vigil1-91
+          key: cs-vigil1-86:["Assess whether the planned acquisition can remain within power and thermal limits using reported state, activity mode, duration, expected resource demand, and applicable limits. The demand estimates and prediction method are unresolved; keep this assessment unknown until it is supported.",1]
+          kind: rule
+        - from: 5559
+          to: 5860
+          id: cs-vigil1-92
+          key: cs-vigil1-86:["Issue a permitted-maneuver or start-acquisition command only when the applicable permission requirements are established. Do not authorize the requested activity when required capability, information, or feasibility remains unknown. Report the restriction or missing information to mission operations.",1]
+          kind: rule
+        - from: 5863
+          to: 5946
+          id: cs-vigil1-93
+          key: cs-vigil1-86:["Apply the same permission requirements to scheduled, direct, and recovery commands.",1]
+          kind: rule
+        - from: 5949
+          to: 6144
+          id: cs-vigil1-94
+          key: cs-vigil1-86:["Reassess permission during the activity as new information arrives and existing information ages. If permission is lost, command a restriction or stop and report the reason to mission operations.",1]
+          kind: rule
+        - from: 6147
+          to: 6394
+          id: cs-vigil1-95
+          key: cs-vigil1-86:["Use feedback to confirm execution and the effects of restriction or stop commands. Command acceptance alone does not establish that an activity started, stopped, or completed. Report unknown execution state when the feedback does not establish it.",1]
+          kind: rule
+    authoredTextHash: 4f9f4af6a96c5832d569ddfb918a6627963ce4a2b646356f685196e4004be962
+  lifecycle: authored
