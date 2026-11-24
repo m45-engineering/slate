@@ -448,6 +448,79 @@ test.afterEach(async ({}, testInfo) => {
   expect(rendererErrors).toEqual([]);
 });
 
+test('copy diagram produces a sharp full-layout PNG independent of zoom and pan', async () => {
+  test.setTimeout(60_000);
+  const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  await page.evaluate(text => window.slate!.newDocument({ name: 'image.yaml', content: text }), content);
+  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
+  await page.evaluate(() => {
+    const state = window as unknown as { copyStage: string };
+    const decode = Image.prototype.decode;
+    Image.prototype.decode = async function () {
+      state.copyStage = 'decoding SVG';
+      await decode.call(this);
+      state.copyStage = 'SVG decoded';
+    };
+    const copy = window.slate!.copyImage;
+    window.slate!.copyImage = async png => { state.copyStage = 'native bridge'; await copy(png); };
+  });
+  const destination = path.join(process.cwd(), 'tmp/control-structure-copy.png');
+  await application.evaluate(({ clipboard, nativeImage, ClipboardItem }, destination) => {
+    const write = clipboard.write.bind(clipboard);
+    clipboard.write = async items => {
+      // Clipboard reads are lazy. Materialize each format before replacing its owner.
+      (clipboard as any).copyStage = 'reading previous clipboard';
+      const previous = await Promise.all((await clipboard.read()).map(async item => new ClipboardItem(Object.fromEntries(
+        await Promise.all(item.types.map(async type => [type, await item.getType(type)])),
+      ))));
+      try {
+        (clipboard as any).copyStage = 'writing PNG';
+        await write(items);
+        (clipboard as any).copyStage = 'reading PNG';
+        const copied = (await clipboard.read()).find(item => item.types.includes('image/png'))!;
+        const png = await copied.getType('image/png');
+        const image = nativeImage.createFromBuffer(Buffer.from(await png.arrayBuffer()));
+        (clipboard as any).copiedDiagram = image;
+        process.getBuiltinModule('fs').writeFileSync(destination, image.toPNG());
+      } catch (error) {
+        (clipboard as any).copyError = String(error);
+        throw error;
+      } finally {
+        if (previous.length) await write(previous);
+        else clipboard.clear();
+      }
+    };
+  }, destination);
+  await page.getByRole('button', { name: 'Copy diagram as image', exact: true }).click();
+  // Software rendering and native clipboard conversion of a 17 MP image can
+  // exceed the default five-second assertion timeout on hosted runners.
+  await expect.poll(async () => ({
+    renderer: await page.evaluate(() => (window as unknown as { copyStage: string }).copyStage),
+    ...await application.evaluate(({ clipboard }) => ({ stage: (clipboard as any).copyStage, error: (clipboard as any).copyError, copied: Boolean((clipboard as any).copiedDiagram) })),
+  }), { timeout: 30_000 }).toEqual(expect.objectContaining({ copied: true }));
+  await expect(page.locator('.control-copy-status')).toHaveText('Image copied');
+  const image = await application.evaluate(({ clipboard }) => {
+    const image = (clipboard as any).copiedDiagram;
+    const bitmap = image.toBitmap();
+    let ink = 0;
+    for (let i = 0; i < bitmap.length; i += 4) if (bitmap[i] < 240 || bitmap[i + 1] < 240 || bitmap[i + 2] < 240) ink++;
+    return { ...image.getSize(), ink, digest: process.getBuiltinModule('crypto').createHash('sha256').update(bitmap).digest('hex') };
+  });
+  expect(Math.max(image.width, image.height)).toBeGreaterThan(3000);
+  expect(image.ink).toBeGreaterThan(image.width * image.height * 0.005);
+  await page.getByRole('button', { name: 'Zoom in diagram', exact: true }).click();
+  const canvas = page.getByRole('group', { name: 'Diagram canvas', exact: true });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 5, box.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 45, box.y + 45, { steps: 4 });
+  await page.mouse.up();
+  await page.getByRole('button', { name: 'Copy diagram as image', exact: true }).click();
+  await expect(page.locator('.control-copy-status')).toHaveText('Image copied', { timeout: 30_000 });
+  expect(await application.evaluate(({ clipboard }) => process.getBuiltinModule('crypto').createHash('sha256').update((clipboard as any).copiedDiagram.toBitmap()).digest('hex'))).toBe(image.digest);
+});
+
+
 test('runs as an isolated desktop app with a live Mermaid preview', async () => {
   await expect(page.getByRole('img', { name: 'Mermaid diagram' })).toBeVisible();
   await expect(page.locator('.document-editor table')).toContainText('Ready');
@@ -3163,60 +3236,6 @@ test('inspection copy includes the complete selected controller and IDs, and rep
   await expect(page.locator('.control-details [role="status"]')).toHaveText('');
 });
 
-test('copy diagram produces a sharp full-layout PNG independent of zoom and pan', async () => {
-  test.setTimeout(60_000);
-  const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
-  await page.evaluate(text => window.slate!.newDocument({ name: 'image.yaml', content: text }), content);
-  await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
-  const destination = path.join(process.cwd(), 'tmp/control-structure-copy.png');
-  await application.evaluate(({ clipboard, nativeImage, ClipboardItem }, destination) => {
-    const write = clipboard.write.bind(clipboard);
-    clipboard.write = async items => {
-      // Clipboard reads are lazy. Materialize each format before replacing its owner.
-      const previous = await Promise.all((await clipboard.read()).map(async item => new ClipboardItem(Object.fromEntries(
-        await Promise.all(item.types.map(async type => [type, await item.getType(type)])),
-      ))));
-      try {
-        await write(items);
-        const copied = (await clipboard.read()).find(item => item.types.includes('image/png'))!;
-        const png = await copied.getType('image/png');
-        const image = nativeImage.createFromBuffer(Buffer.from(await png.arrayBuffer()));
-        (clipboard as any).copiedDiagram = image;
-        process.getBuiltinModule('fs').writeFileSync(destination, image.toPNG());
-      } catch (error) {
-        (clipboard as any).copyError = String(error);
-        throw error;
-      } finally {
-        if (previous.length) await write(previous);
-        else clipboard.clear();
-      }
-    };
-  }, destination);
-  await page.getByRole('button', { name: 'Copy diagram as image', exact: true }).click();
-  // Software rendering and native clipboard conversion of a 17 MP image can
-  // exceed the default five-second assertion timeout on hosted runners.
-  await expect.poll(() => application.evaluate(({ clipboard }) => (clipboard as any).copyError ?? Boolean((clipboard as any).copiedDiagram)), { timeout: 30_000 }).toBe(true);
-  await expect(page.locator('.control-copy-status')).toHaveText('Image copied');
-  const image = await application.evaluate(({ clipboard }) => {
-    const image = (clipboard as any).copiedDiagram;
-    const bitmap = image.toBitmap();
-    let ink = 0;
-    for (let i = 0; i < bitmap.length; i += 4) if (bitmap[i] < 240 || bitmap[i + 1] < 240 || bitmap[i + 2] < 240) ink++;
-    return { ...image.getSize(), ink, digest: process.getBuiltinModule('crypto').createHash('sha256').update(bitmap).digest('hex') };
-  });
-  expect(Math.max(image.width, image.height)).toBeGreaterThan(3000);
-  expect(image.ink).toBeGreaterThan(image.width * image.height * 0.005);
-  await page.getByRole('button', { name: 'Zoom in diagram', exact: true }).click();
-  const canvas = page.getByRole('group', { name: 'Diagram canvas', exact: true });
-  const box = (await canvas.boundingBox())!;
-  await page.mouse.move(box.x + 5, box.y + 5);
-  await page.mouse.down();
-  await page.mouse.move(box.x + 45, box.y + 45, { steps: 4 });
-  await page.mouse.up();
-  await page.getByRole('button', { name: 'Copy diagram as image', exact: true }).click();
-  await expect(page.locator('.control-copy-status')).toHaveText('Image copied', { timeout: 30_000 });
-  expect(await application.evaluate(({ clipboard }) => process.getBuiltinModule('crypto').createHash('sha256').update((clipboard as any).copiedDiagram.toBitmap()).digest('hex'))).toBe(image.digest);
-});
 
 test('selecting, resizing, and applying component or edge edits preserves diagram zoom and pan', async () => {
   const content = 'Pilot (controller) -> Hoist (actuator): Raise\nPilot process model:\n  Load position\n';
