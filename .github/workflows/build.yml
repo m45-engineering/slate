@@ -89,7 +89,7 @@ jobs:
         if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
       - run: pnpm build
         if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e --max-failures=1
         if: steps.validated.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
       - name: Upload test failure diagnostics
         if: failure()
