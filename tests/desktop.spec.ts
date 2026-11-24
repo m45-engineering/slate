@@ -453,26 +453,17 @@ test('copy diagram produces a sharp full-layout PNG independent of zoom and pan'
   const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
   await page.evaluate(text => window.slate!.newDocument({ name: 'image.yaml', content: text }), content);
   await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
-  await page.evaluate(() => {
-    const state = window as unknown as { copyStage: string };
-    const decode = Image.prototype.decode;
-    Image.prototype.decode = async function () {
-      state.copyStage = 'decoding SVG';
-      await decode.call(this);
-      state.copyStage = 'SVG decoded';
-    };
-    const copy = window.slate!.copyImage;
-    window.slate!.copyImage = async png => { state.copyStage = 'native bridge'; await copy(png); };
-  });
   const destination = path.join(process.cwd(), 'tmp/control-structure-copy.png');
-  await application.evaluate(({ clipboard, nativeImage, ClipboardItem }, destination) => {
+  await application.evaluate(({ clipboard, nativeImage, ClipboardItem }, { destination, preserveClipboard }) => {
     const write = clipboard.write.bind(clipboard);
     clipboard.write = async items => {
-      // Clipboard reads are lazy. Materialize each format before replacing its owner.
+      // Preserve the user's clipboard locally. Hosted runners have no user
+      // clipboard to restore, and reading their platform-owned formats can hang.
+      // Clipboard reads are lazy, so materialize local formats before writing.
       (clipboard as any).copyStage = 'reading previous clipboard';
-      const previous = await Promise.all((await clipboard.read()).map(async item => new ClipboardItem(Object.fromEntries(
+      const previous = preserveClipboard ? await Promise.all((await clipboard.read()).map(async item => new ClipboardItem(Object.fromEntries(
         await Promise.all(item.types.map(async type => [type, await item.getType(type)])),
-      ))));
+      )))) : [];
       try {
         (clipboard as any).copyStage = 'writing PNG';
         await write(items);
@@ -490,14 +481,13 @@ test('copy diagram produces a sharp full-layout PNG independent of zoom and pan'
         else clipboard.clear();
       }
     };
-  }, destination);
+  }, { destination, preserveClipboard: !process.env.CI });
   await page.getByRole('button', { name: 'Copy diagram as image', exact: true }).click();
   // Software rendering and native clipboard conversion of a 17 MP image can
   // exceed the default five-second assertion timeout on hosted runners.
-  await expect.poll(async () => ({
-    renderer: await page.evaluate(() => (window as unknown as { copyStage: string }).copyStage),
-    ...await application.evaluate(({ clipboard }) => ({ stage: (clipboard as any).copyStage, error: (clipboard as any).copyError, copied: Boolean((clipboard as any).copiedDiagram) })),
-  }), { timeout: 30_000 }).toEqual(expect.objectContaining({ copied: true }));
+  await expect.poll(() => application.evaluate(({ clipboard }) => ({
+    stage: (clipboard as any).copyStage, error: (clipboard as any).copyError, copied: Boolean((clipboard as any).copiedDiagram),
+  })), { timeout: 30_000 }).toEqual(expect.objectContaining({ copied: true }));
   await expect(page.locator('.control-copy-status')).toHaveText('Image copied');
   const image = await application.evaluate(({ clipboard }) => {
     const image = (clipboard as any).copiedDiagram;
