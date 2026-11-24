@@ -3002,6 +3002,9 @@ test('control diagram selects parallel arrows by click or keyboard without retai
   await expect(raise).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.control-details')).toContainText('Raise');
   await expect(source).toHaveValue(content);
+  // Opening the inspector preserves the view, so fit explicitly before testing
+  // a path coordinate that could otherwise be covered by the inspector.
+  await page.getByRole('button', { name: 'Fit diagram', exact: true }).click();
   const stopId = await stop.getAttribute('data-diagram-id');
   const hit = page.locator(`.control-connection-hit[data-diagram-id="${stopId}"]`);
   const point = await hit.evaluate((element: SVGPathElement) => {
@@ -3084,6 +3087,7 @@ test('control structure canvas fills the available height and responds to window
 });
 
 test('controller inspection resizes from its top border without editing the document', async () => {
+  await page.setViewportSize({ width: 1120, height: 1100 });
   const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
   const target = path.join(directory, 'resizable-controller.yaml');
   await writeFile(target, content);
@@ -3160,6 +3164,7 @@ test('inspection copy includes the complete selected controller and IDs, and rep
 });
 
 test('copy diagram produces a sharp full-layout PNG independent of zoom and pan', async () => {
+  test.setTimeout(60_000);
   const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
   await page.evaluate(text => window.slate!.newDocument({ name: 'image.yaml', content: text }), content);
   await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
@@ -3188,7 +3193,9 @@ test('copy diagram produces a sharp full-layout PNG independent of zoom and pan'
     };
   }, destination);
   await page.getByRole('button', { name: 'Copy diagram as image', exact: true }).click();
-  await expect.poll(() => application.evaluate(({ clipboard }) => (clipboard as any).copyError ?? Boolean((clipboard as any).copiedDiagram))).toBe(true);
+  // Software rendering and native clipboard conversion of a 17 MP image can
+  // exceed the default five-second assertion timeout on hosted runners.
+  await expect.poll(() => application.evaluate(({ clipboard }) => (clipboard as any).copyError ?? Boolean((clipboard as any).copiedDiagram)), { timeout: 30_000 }).toBe(true);
   await expect(page.locator('.control-copy-status')).toHaveText('Image copied');
   const image = await application.evaluate(({ clipboard }) => {
     const image = (clipboard as any).copiedDiagram;
@@ -3207,7 +3214,7 @@ test('copy diagram produces a sharp full-layout PNG independent of zoom and pan'
   await page.mouse.move(box.x + 45, box.y + 45, { steps: 4 });
   await page.mouse.up();
   await page.getByRole('button', { name: 'Copy diagram as image', exact: true }).click();
-  await expect(page.locator('.control-copy-status')).toHaveText('Image copied');
+  await expect(page.locator('.control-copy-status')).toHaveText('Image copied', { timeout: 30_000 });
   expect(await application.evaluate(({ clipboard }) => process.getBuiltinModule('crypto').createHash('sha256').update((clipboard as any).copiedDiagram.toBitmap()).digest('hex'))).toBe(image.digest);
 });
 
@@ -3336,7 +3343,12 @@ test('controller dialog shows both identified sections, resizes, and applies row
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.locator('[data-controller-item-id="cs-vigil1-85"]')).toHaveCount(1);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(page.locator('[data-controller-item-id="cs-vigil1-85"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(async () => {
+    const saved = readControlFile(target, await readFile(target, 'utf8'));
+    return removed.every(id => !saved.result.identity.entries.some(item => item.id === id));
+  }).toBe(true);
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   const saved = readControlFile(target, await readFile(target, 'utf8'));
   for (const id of removed) expect(saved.result.identity.entries.some(item => item.id === id)).toBe(false);
