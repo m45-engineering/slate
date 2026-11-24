@@ -3,7 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
-const { isTextFile } = require('./file-types.cjs');
+const { isOpenableFile } = require('./file-types.cjs');
 const { SessionStore } = require('./session-store.cjs');
 const { createWorkspaceWindow } = require('./workspace-window.cjs');
 
@@ -21,7 +21,7 @@ let quitting = false;
 function targetArgument(args) {
   return args.find(value => {
     if (value.startsWith('-')) return false;
-    if (isTextFile(value)) return true;
+    if (isOpenableFile(value)) return true;
     try { return fs.statSync(value).isDirectory(); } catch { return false; }
   });
 }
@@ -140,7 +140,7 @@ else {
       return net.fetch(pathToFileURL(resource).toString());
     });
     if (!(launchedFromSource && process.env.SLATE_DEV_URL === 'http://127.0.0.1:3210')) {
-      const csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'";
+      const csp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'";
       const { session } = require('electron');
       session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
         callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp] } });

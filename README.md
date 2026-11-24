@@ -1,6 +1,6 @@
 # Slate
 
-A quiet place to write. A local Markdown, text, and code editor for macOS and Windows, built with Electron, Next.js, and Tiptap.
+A quiet place to write. A local Markdown, text, and code editor with document and model previews for macOS and Windows, built with Electron, Next.js, and Tiptap.
 
 ![Slate showing a fictional rover project with document tabs, a folder sidebar, a formula, a Mermaid diagram, a checklist, and a table.](docs/images/slate.png)
 
@@ -12,7 +12,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-0.1.9-mac-arm64.dmg` from the [v0.1.9 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.9). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-0.1.10-mac-arm64.dmg` from the [v0.1.10 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.10). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -22,26 +22,29 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-0.1.9-win-x64.exe` from the [v0.1.9 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.9) for a standard Intel/AMD PC.
+1. Download `Slate-0.1.10-win-x64.exe` from the [v0.1.10 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.10) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Download both installers from the [v0.1.9 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.9). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
+Download both installers from the [v0.1.10 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.10). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
 
 ## Features
 
 - Visual editing and raw Markdown, with a document outline.
 - Find and replace in the current document, with highlighted matches, next/previous navigation, match-case, and Replace All. Use ⌘F / Ctrl+F to find; ⌥⌘F on macOS or Ctrl+H on Windows to replace. Enter / Shift+Enter steps through matches; Escape closes the bar. Visual replacements preserve surrounding formatting; Markdown and source mode search the exact file text.
-- A resizable shadcn folder sidebar with lazy directory browsing, live filename search, current-file highlighting, and an Outline tab. Markdown opens in the visual editor; text and code open in the source editor. Binary files remain visible for context.
-- Source editing with line numbers, Geist Mono, document zoom, and the same explicit Save and conflict protection. Supports TypeScript/JavaScript, Python, C/C++, SQL, JSON/JSONL, YAML, XML/XMI/ReqIF, HTML/SVG source, CSS, CSV, shell scripts, patches, plain text, and common extensionless files such as Dockerfile and Makefile.
+- A resizable shadcn folder sidebar with lazy directory browsing, live filename search, current-file highlighting, and an Outline tab. Markdown opens in the visual editor; text and code open in the source editor. PDFs, images, and supported model archives open as read-only previews. Word and Excel files open in their default apps; other unsupported files remain visible for context.
+- Source editing with line numbers, Geist Mono, document zoom, and the same explicit Save and conflict protection. Supports TypeScript/JavaScript, Python, C/C++, SQL, JSON/JSONL, YAML, XML/XMI/ReqIF, HTML source, CSS, CSV, shell scripts, patches, plain text, and common extensionless files such as Dockerfile and Makefile.
 - Create files and folders directly from the sidebar: use the icons beside the workspace name for the root, or right-click a folder for New File / New Folder. New files open in a tab; existing files are never replaced.
 - Drag files or folders onto another folder in the sidebar to move them. Hovering expands a folder; drop onto the workspace heading to move back to the root. Open tabs keep their drafts and follow the move. Moves refuse existing destination names.
 - Select multiple files with ⌘-click on macOS or Ctrl-click on Windows; Shift-click selects a visible range. Drag the selected group into a folder, or choose **Move N files…** from its context menu. Destination conflicts are checked before any file moves.
 - Drop files from Finder or another file manager onto a sidebar folder or the workspace heading to copy them there. The originals stay in place; existing destination files are never replaced.
 - Right-click files or folders in the sidebar (including search results) to rename, move, or delete them. Move uses the native folder picker within the open workspace; Delete confirms before sending the item to the system Trash. Open tabs follow renamed or moved files, including unsaved edits.
-- Multiple document tabs with a blue dot for unsaved changes, individual close buttons, drag reordering, and a right-click menu for Close / Close Others / Close All. Switching tabs keeps each draft in memory.
+- Reveal a sidebar file, folder, search result, or saved tab in Finder on macOS or File Explorer on Windows from its right-click menu.
+- Read-only Cameo/MagicDraw `.mdzip` previews with saved diagram positions, element details, tables, and relationship matrices.
+- Read-only PDFs with selectable text, search, page navigation, and fit/zoom controls; image previews for PNG, JPEG, WebP, GIF, and SVG with fit, actual size, zoom, and drag-to-pan.
+- Multiple document tabs with a blue dot for unsaved changes, individual close buttons, drag reordering, and a right-click menu for Close / Close Others / Close All. Switching tabs keeps each draft in memory. Crowded tab strips scroll horizontally without visible scrollbars; keyboard navigation brings the focused tab into view.
 - Independent windows through **File → New Window** (⌘⇧N / Ctrl+Shift+N), each with its own folder, document tabs, unsaved drafts, and save prompts.
 - Reopens saved workspaces and their file tabs in their previous order on restart, reading each file's latest contents from disk. Recovery drafts stay separate between windows.
 - Opens centered at 96% of the current display's available width and height, leaving the menu bar and Dock or taskbar clear.
@@ -178,9 +181,21 @@ The initial update introducing documentation-only skipping also skips the deskto
 
 ## Text and code files
 
-Open supported files from the sidebar, filename search, native file picker, or command line. Files must contain UTF-8 text, contain no NUL bytes, and be no larger than 10 MB. Binary formats such as PDF, PNG, and XLSX are not editable.
+Open supported files from the sidebar, filename search, native file picker, or command line. Editable text files must contain UTF-8 text, contain no NUL bytes, and be no larger than 10 MB. PDF, image, and model previews are read-only and support files up to 50 MiB. Word and Excel files open externally.
 
-Text and code use a source editor with line numbers, 12px Geist Mono text, and locally bundled syntax highlighting. Markdown source keeps its 13px text. The high-contrast colors preserve the white background. Files are never converted through Markdown, formatted automatically, or executed. HTML, SVG, and MDX remain source text. Highlighting follows the filename for common programming, configuration, and markup languages. Plain text, unknown languages, and files over 200,000 characters use readable plain text to keep editing responsive. Code completion and language tooling are not included in this version. The shared supported-extension list is in [electron/file-types.cjs](electron/file-types.cjs).
+Text and code use a source editor with line numbers, 12px Geist Mono text, and locally bundled syntax highlighting. Markdown source keeps its 13px text. The high-contrast colors preserve the white background. Files are never converted through Markdown, formatted automatically, or executed. HTML and MDX remain source text. SVG files open in the image viewer. Highlighting follows the filename for common programming, configuration, and markup languages. Plain text, unknown languages, and files over 200,000 characters use readable plain text to keep editing responsive. Code completion and language tooling are not included in this version. The shared supported-extension list is in [electron/file-types.cjs](electron/file-types.cjs).
+
+## PDF, image, and model previews
+
+Open a file from the sidebar, filename search, or **Open → Open file…**. Previews never save over their source files. If a file changes on disk, use **Reload file** to view its latest contents.
+
+- **PDF:** Navigate pages, choose Fit width or Fit page, zoom, select text, and search with ⌘F / Ctrl+F. Password-protected PDFs prompt for a password. PDF.js and its rendering assets are bundled locally. Scanned pages without an embedded text layer cannot be searched; OCR, form editing, and annotation editing are not included. The preview currently omits PDF annotations. Use **Open in default app** when you need the original application's full PDF features.
+- **Images:** View PNG, JPG/JPEG, WebP, GIF, and SVG. Choose Fit image or Actual size, zoom with the controls or a trackpad pinch, and drag to pan. Original image colors are preserved. SVGs load as images; their scripts are not executed. **Open in default app** is also available.
+- **Cameo/MagicDraw models:** Open `.mdzip` archives containing a SysML v1/UML model. The viewer preserves saved positions and connector routes while using Slate's monochrome presentation. It supports block definition, internal block, package, requirement, use case, activity, sequence, parametric, state machine, and profile diagrams, plus generic tables, verification matrices, and allocation matrices. Search the diagram list, select a shape or relationship to inspect its properties, and resize the navigation and details panes.
+
+Model previews use simplified notation rather than Cameo's rendering engine. Fonts, symbols, and compartments can differ. Matrices are reconstructed from saved scopes and explicit relationships; unsupported criteria are identified in the preview. A saved canvas containing only a frame is shown as such, with available linked interaction data. Missing layouts, unresolved references, and unsupported content are reported instead of invented. External project models are not loaded, and model behavior is never executed. `.sysml` and `.kerml` files remain source text rather than SysML v2 diagrams.
+
+Word and Excel documents—including `.doc`, `.docx`, `.xls`, and `.xlsx`—open in the operating system's default application without creating a Slate tab. If no application is associated with the file, Slate reports the error. CSV and TSV files continue to open in the source editor.
 
 ## Markdown fidelity
 
@@ -216,7 +231,7 @@ pnpm build       # static production export
 pnpm test:e2e    # launch Electron; requires a desktop session
 ```
 
-[Desktop tests](tests/desktop.spec.ts) exercise the actual exported app, including native file loading, Markdown round trips, source editing and explicit saving, Save / Discard / Cancel, draft recovery, session restore, table editing, Mermaid rendering, PDF export, web links, and external changes. [File tests](tests/file-store.test.cjs) cover byte preservation, line endings, conflicts, and invalid files.
+[Desktop tests](tests/desktop.spec.ts) exercise the actual exported app, including native file loading, Markdown round trips, source editing and explicit saving, Save / Discard / Cancel, draft recovery, session restore, table editing, Mermaid rendering, PDF export, web links, and external changes. [File tests](tests/file-store.test.cjs) cover byte preservation, line endings, conflicts, read-only previews, and invalid files. [Preview tests](tests/file-preview.spec.ts) cover PDF rendering/search, image navigation, and default-app dispatch. [Model tests](tests/model-viewer.spec.ts) cover saved layouts and element inspection; the optional full DellSat check requires `SLATE_MDZIP_SAMPLE` to point to a local archive, which is not bundled with the repository.
 
 ## License
 
@@ -244,7 +259,9 @@ The Next.js UI is exported into `out/` and loaded by Electron through a local `s
 - `src/components/code-block.tsx`: fenced code and Mermaid previews.
 - `electron/main.cjs`: application lifecycle, window routing, and workspace persistence.
 - `electron/workspace-window.cjs`: each window's menus, native dialogs, documents, and file watching.
-- `electron/file-store.cjs`: UTF-8 file I/O, conflict checks, and replacement writes.
+- `electron/file-store.cjs`: UTF-8 and read-only binary file I/O, conflict checks, and replacement writes.
+- `src/components/pdf-viewer.tsx` and `image-viewer.tsx`: local, read-only file previews.
+- `src/components/model-viewer.tsx` and `src/lib/mbse/`: model import, saved diagrams, tables, and element inspection.
 - `electron/folder-store.cjs`: directory listings and access restricted to the selected folder.
 - `src/components/folder-sidebar.tsx`: the shadcn folder navigator and Outline tab.
 

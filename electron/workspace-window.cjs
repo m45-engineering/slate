@@ -3,7 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
 const { readDocument, writeDocument, diskMatches, MAX_BYTES } = require('./file-store.cjs');
-const { isTextFile, isMarkdown, TEXT_EXTENSIONS } = require('./file-types.cjs');
+const { isOpenableFile, isReadOnlyFile, isPreviewFile, isExternalFile, isMarkdown, TEXT_EXTENSIONS, OPEN_EXTENSIONS } = require('./file-types.cjs');
 const { exportPdf } = require('./pdf-export.cjs');
 const { FolderStore } = require('./folder-store.cjs');
 const { resolveDocumentLink } = require('./document-links.cjs');
@@ -50,7 +50,7 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
   }
   function setDirty(id, value) {
     const record = documents.get(id);
-    if (record) record.dirty = value;
+    if (record) record.dirty = !isReadOnlyFile(record.name) && value;
     updateWindow();
   }
   function stopWatching(record) {
@@ -140,8 +140,17 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     finally { busy = false; }
   }
 
+  async function openInDefaultApp(filePath) {
+    if (!isExternalFile(filePath) && !isPreviewFile(filePath)) throw new Error('This file type cannot be opened externally from Slate.');
+    if (!(await fs.promises.stat(filePath)).isFile()) throw new Error('Choose a file.');
+    const error = await shell.openPath(filePath);
+    if (error) throw new Error(`Could not open ${path.basename(filePath)} in its default app. ${error}`);
+    return { openedExternally: true };
+  }
+
   async function openFile(filePath) {
     const canonical = await fs.promises.realpath(path.resolve(filePath));
+    if (isExternalFile(canonical)) return openInDefaultApp(canonical);
     const existing = [...documents.values()].find(record => record.document?.path === canonical);
     if (existing) { await activate(existing); return { document: payload(existing) }; }
     const doc = await readDocument(canonical);
@@ -157,7 +166,7 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
   }
 
   async function openDialog() {
-    const result = await dialog.showOpenDialog(window, { properties: ['openFile'], filters: [{ name: 'Text and code files', extensions: TEXT_EXTENSIONS }, { name: 'All files', extensions: ['*'] }] });
+    const result = await dialog.showOpenDialog(window, { properties: ['openFile'], filters: [{ name: 'Documents, images, and code', extensions: OPEN_EXTENSIONS }, { name: 'All files', extensions: ['*'] }] });
     if (result.canceled) return { canceled: true };
     return openFile(result.filePaths[0]);
   }
@@ -205,7 +214,11 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
           for (const file of saved.files.filter(file => inside(target, file))) await restoreFile(file);
         } else {
           if (saved.folder && inside(saved.folder, target)) await restoreFolder(saved.folder);
-          await restoreFile(target, true);
+          if (isExternalFile(target)) {
+            await restoreFolder(saved.folder);
+            for (const file of saved.files) await restoreFile(file);
+            await openInDefaultApp(target);
+          } else await restoreFile(target, true);
         }
       } catch (error) { notice = `Could not open the requested path: ${error.message}`; }
     } else {
@@ -227,6 +240,22 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     return snapshot();
   });
   handle('document:open', () => exclusive(openDialog));
+  async function revealPath(filePath) {
+    await fs.promises.access(filePath);
+    shell.showItemInFolder(filePath);
+    return {};
+  }
+  handle('document:reveal', id => exclusive(async () => {
+    const record = documents.get(id);
+    if (!record) throw new Error('The document is no longer open.');
+    if (!record.document) throw new Error('Save the document before revealing it.');
+    return revealPath(record.document.path);
+  }));
+  handle('document:open-default', id => exclusive(async () => {
+    const record = documents.get(id);
+    if (!record?.document) throw new Error('The document is no longer open.');
+    return openInDefaultApp(record.document.path);
+  }));
   async function openLink(href, id = activeId) {
     const record = documents.get(id);
     if (!record) throw new Error('The document is no longer open.');
@@ -266,6 +295,7 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     catch (error) { return { error: error.message }; }
   });
   handle('folder:open-file', relativePath => exclusive(async () => openFile(await folder.resolve(relativePath))));
+  handle('folder:reveal', relativePath => exclusive(async () => revealPath(await folder.resolve(relativePath))));
   handle('folder:create', (parent, name, kind, content) => exclusive(async () => {
     const created = await folder.create(parent, name, kind, content);
     if (kind === 'file') await openFile(created.absolute);
@@ -309,7 +339,7 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
   }
   handle('folder:rename', (relativePath, name) => exclusive(async () => {
     const from = await folder.resolveEntry(relativePath);
-    if ([...documents.values()].some(record => record.document?.path === from) && !isTextFile(name)) throw new Error('An open file needs a supported text or code extension.');
+    if ([...documents.values()].some(record => record.document?.path === from) && (!isOpenableFile(name) || isExternalFile(name) || isReadOnlyFile(name) !== isReadOnlyFile(from))) throw new Error('Close the file before changing its file type.');
     return changeEntry(relativePath, () => folder.rename(relativePath, name));
   }));
   handle('folder:move', (relativePath, destinationPath) => exclusive(async () => {
@@ -398,6 +428,7 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     if (typeof content !== 'string') throw new Error('Invalid document content.');
     const record = documents.get(options?.id ?? activeId);
     if (!record || (options && options.path !== (record.document?.path ?? null))) return { canceled: true };
+    if (isReadOnlyFile(record.name)) throw new Error('This file is read-only in Slate.');
     let filePath = record.document?.path;
     if (!filePath || saveAs) {
       const result = await dialog.showSaveDialog(window, {

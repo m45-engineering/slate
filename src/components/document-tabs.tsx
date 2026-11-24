@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { revealLabel } from '@/lib/document';
 import { Icon } from './icon';
 import { Button } from './ui/button';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
@@ -9,10 +10,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 
 type DocumentTab = { id: string; name: string; path: string | null; dirty: boolean };
 
-export function DocumentTabs({ tabs, activeId, onSelect, onClose, onCloseOthers, onCloseAll, onReorder }: {
+export function DocumentTabs({ tabs, activeId, onSelect, onClose, onCloseOthers, onCloseAll, onReorder, onReveal }: {
   tabs: DocumentTab[]; activeId: string;
   onSelect(id: string): void; onClose(id: string): void;
   onCloseOthers(id: string): void; onCloseAll(): void; onReorder(ids: string[]): void;
+  onReveal(id: string): void;
 }) {
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const dragging = useRef<string | null>(null);
@@ -52,6 +54,8 @@ export function DocumentTabs({ tabs, activeId, onSelect, onClose, onCloseOthers,
     <DropdownMenu open={Boolean(menu)} onOpenChange={open => { if (!open) setMenu(null); }}>
       <DropdownMenuTrigger asChild><Button tabIndex={-1} aria-hidden="true" className="tab-menu-anchor" style={{ left: menu?.x ?? 0, top: menu?.y ?? 0 }} /></DropdownMenuTrigger>
       <DropdownMenuContent align="start" onCloseAutoFocus={event => { event.preventDefault(); triggers.current.get(menu?.id ?? activeId)?.focus(); }}>
+        <DropdownMenuItem disabled={!tabs.find(tab => tab.id === menu?.id)?.path} onSelect={() => { if (menu) onReveal(menu.id); }}>{revealLabel(typeof window === 'undefined' ? undefined : window.slate?.platform)}</DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => { if (menu) onClose(menu.id); }}>Close</DropdownMenuItem>
         <DropdownMenuItem disabled={tabs.length < 2} onSelect={() => { if (menu) onCloseOthers(menu.id); }}>Close Others</DropdownMenuItem>
         <DropdownMenuSeparator />

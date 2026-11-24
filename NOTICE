@@ -10,3 +10,11 @@ not replace or restrict those licenses.
 KaTeX and Tiptap Mathematics license texts are included in
 public/third-party-math-licenses.txt (third-party-math-licenses.txt in the app's
 bundled web assets).
+
+PDF.js is licensed under Apache-2.0. Its license is included in pdfjs/LICENSE
+in the app's bundled web assets, alongside the licenses for its bundled fonts,
+character maps, and WebAssembly components in their respective directories.
+
+JSZip and @xmldom/xmldom license texts are included in
+public/third-party-model-licenses.txt (third-party-model-licenses.txt in the
+app's bundled web assets).

@@ -53,7 +53,7 @@ test('filename search includes text and source without expanding folders and ref
   await fs.writeFile(path.join(root, 'docs', 'helpers.ts'), 'export const value = 42;');
   await fs.writeFile(path.join(root, 'image.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   assert.deepEqual((await store.search('helpers', true)).entries.map(entry => entry.path), ['docs/helpers.ts']);
-  assert.equal((await store.search('image')).total, 0);
+  assert.equal((await store.search('image')).total, 1);
   await fs.writeFile(path.join(root, 'docs', 'design-review.md'), '# Review');
   assert.equal((await store.search('design', true)).total, 2);
   assert.equal((await store.search('no-such-file')).total, 0);

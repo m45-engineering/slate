@@ -60,4 +60,16 @@ function syntaxLanguage(value) {
   return syntaxLanguages[extension(value)] || null;
 }
 
-module.exports = { TEXT_EXTENSIONS, isMarkdown, isTextFile, fileLabel, syntaxLanguage };
+const IMAGE_MIME_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', svg: 'image/svg+xml' };
+const OFFICE_EXTENSIONS = ['doc', 'docx', 'docm', 'dot', 'dotx', 'dotm', 'xls', 'xlsx', 'xlsm', 'xlsb', 'xlt', 'xltx', 'xltm'];
+const isPdfFile = value => extension(value) === 'pdf';
+const imageMimeType = value => IMAGE_MIME_TYPES[extension(value)] || null;
+const isImageFile = value => Boolean(imageMimeType(value));
+const isPreviewFile = value => isPdfFile(value) || isImageFile(value);
+const isExternalFile = value => OFFICE_EXTENSIONS.includes(extension(value));
+const isModelFile = value => extension(value) === 'mdzip';
+const isReadOnlyFile = value => isModelFile(value) || isPreviewFile(value);
+const OPEN_EXTENSIONS = [...new Set([...TEXT_EXTENSIONS, 'mdzip', 'pdf', ...Object.keys(IMAGE_MIME_TYPES), ...OFFICE_EXTENSIONS])];
+const isOpenableFile = value => isTextFile(value) || isReadOnlyFile(value) || isExternalFile(value);
+
+module.exports = { isPdfFile, isImageFile, imageMimeType, isPreviewFile, isExternalFile, isReadOnlyFile, OPEN_EXTENSIONS, isModelFile, isOpenableFile, TEXT_EXTENSIONS, isMarkdown, isTextFile, fileLabel, syntaxLanguage };
