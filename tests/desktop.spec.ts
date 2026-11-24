@@ -1706,7 +1706,7 @@ test('source files open from search, save exactly, and restore on restart', asyn
   await expect(page.getByRole('heading', { name: 'A real document', exact: true })).toBeVisible();
 });
 
-test('native Open loads JSON, HTML, SVG, and extensionless files as source without executing them', async () => {
+test('native Open loads source files and inert SVG previews without executing them', async () => {
   const samples = [
     ['settings.json', '{  "enabled" : true, "paths" : ["a", "b"] }\n'],
     ['page.html', '<script>window.slateExecuted = true</script><h1>Untrusted HTML</h1>\n'],
@@ -1720,7 +1720,12 @@ test('native Open loads JSON, HTML, SVG, and extensionless files as source witho
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
     }, target);
     await page.evaluate(() => window.slate!.open());
-    await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue(content);
+    if (name.endsWith('.svg')) {
+      await expect(page.getByRole('img', { name, exact: true })).toBeVisible();
+      await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveCount(0);
+    } else {
+      await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue(content);
+    }
     await expect(page.getByRole('tab', { name: 'Visual', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => Reflect.get(window, 'slateExecuted'))).toBeUndefined();
     expect(await readFile(target, 'utf8')).toBe(content);
