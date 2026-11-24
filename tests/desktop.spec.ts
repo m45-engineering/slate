@@ -1389,7 +1389,7 @@ test('folder navigation shows context, refreshes, and opens Markdown files', asy
   await writeFile(path.join(directory, 'image.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await expect(page.getByRole('button', { name: 'package.json', exact: true })).toHaveAttribute('aria-disabled', 'false');
-  await expect(page.getByRole('button', { name: 'image.png', exact: true })).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.getByRole('button', { name: 'image.png', exact: true })).toHaveAttribute('aria-disabled', 'false');
   await page.getByRole('button', { name: 'notes', exact: true }).click();
   await openSidebarFile('design.md');
   await expect(page.getByRole('heading', { name: 'Design notes' })).toBeVisible();
@@ -1706,7 +1706,7 @@ test('source files open from search, save exactly, and restore on restart', asyn
   await expect(page.getByRole('heading', { name: 'A real document', exact: true })).toBeVisible();
 });
 
-test('native Open loads JSON, HTML, SVG, and extensionless files as source without executing them', async () => {
+test('native Open loads source files and inert SVG previews without executing them', async () => {
   const samples = [
     ['settings.json', '{  "enabled" : true, "paths" : ["a", "b"] }\n'],
     ['page.html', '<script>window.slateExecuted = true</script><h1>Untrusted HTML</h1>\n'],
@@ -1720,7 +1720,12 @@ test('native Open loads JSON, HTML, SVG, and extensionless files as source witho
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
     }, target);
     await page.evaluate(() => window.slate!.open());
-    await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue(content);
+    if (name.endsWith('.svg')) {
+      await expect(page.getByRole('img', { name, exact: true })).toBeVisible();
+      await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveCount(0);
+    } else {
+      await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveValue(content);
+    }
     await expect(page.getByRole('tab', { name: 'Visual', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => Reflect.get(window, 'slateExecuted'))).toBeUndefined();
     expect(await readFile(target, 'utf8')).toBe(content);
@@ -2129,6 +2134,80 @@ test('plain text and large code files remain readable without a highlighting ove
   }
 });
 
+test('reveal opens sidebar files, folders, search results, and the workspace in the native file manager', async () => {
+  const nested = path.join(directory, 'folder with spaces');
+  const attachment = path.join(directory, 'attachment.bin');
+  await mkdir(nested);
+  await writeFile(attachment, 'unsupported file');
+  await application.evaluate(({ shell }) => {
+    Reflect.set(globalThis, 'revealedPaths', []);
+    shell.showItemInFolder = target => { Reflect.get(globalThis, 'revealedPaths').push(target); };
+  });
+  const label = process.platform === 'darwin' ? 'Reveal in Finder' : process.platform === 'win32' ? 'Reveal in File Explorer' : 'Reveal in File Manager';
+  const reveal = async (target: Locator, expected: string, force = false) => {
+    await target.click({ button: 'right', force });
+    await page.getByRole('menuitem', { name: label, exact: true }).click();
+    await expect.poll(() => application.evaluate(() => Reflect.get(globalThis, 'revealedPaths').at(-1))).toBe(await realpath(expected));
+  };
+  await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
+  await reveal(page.getByRole('button', { name: 'sample.md', exact: true }), file);
+  await reveal(page.getByRole('button', { name: 'folder with spaces', exact: true }), nested);
+  // Unsupported files disable opening, but still accept a native right-click.
+  await reveal(page.getByRole('button', { name: 'attachment.bin', exact: true }), attachment, true);
+  await page.getByRole('textbox', { name: 'Find file by name', exact: true }).fill('sample');
+  await reveal(page.locator('.file-search-result').filter({ hasText: 'sample.md' }), file);
+  await reveal(page.getByLabel('Workspace folder', { exact: true }), directory);
+  await page.getByLabel('Workspace folder', { exact: true }).click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Rename…', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Delete…', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('reveal targets the right-clicked tab without saving drafts or switching the active document', async () => {
+  await application.evaluate(({ shell }) => {
+    Reflect.set(globalThis, 'revealedPaths', []);
+    shell.showItemInFolder = target => { Reflect.get(globalThis, 'revealedPaths').push(target); };
+  });
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Unsaved edits\n');
+  await page.evaluate(() => window.slate!.newDocument());
+  const label = process.platform === 'darwin' ? 'Reveal in Finder' : process.platform === 'win32' ? 'Reveal in File Explorer' : 'Reveal in File Manager';
+  const draft = page.getByRole('tab', { name: 'Untitled.md', exact: true });
+  await draft.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: label, exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: label, exact: true }).click();
+  await expect.poll(() => application.evaluate(() => Reflect.get(globalThis, 'revealedPaths'))).toEqual([await realpath(file)]);
+  await expect(draft).toHaveAttribute('aria-selected', 'true');
+  expect(await readFile(file, 'utf8')).toBe(original);
+  await page.getByRole('tab', { name: 'sample.md, unsaved changes', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Unsaved edits\n');
+});
+
+test('reveal rejects missing files, unknown tabs, unsaved documents, and paths outside the workspace', async () => {
+  await application.evaluate(({ shell }) => {
+    Reflect.set(globalThis, 'revealedPaths', []);
+    shell.showItemInFolder = target => { Reflect.get(globalThis, 'revealedPaths').push(target); };
+  });
+  const document = await page.evaluate(() => window.slate!.newDocument());
+  const errors = await page.evaluate(async id => [
+    await window.slate!.revealDocument(id),
+    await window.slate!.revealDocument('unknown-tab'),
+    await window.slate!.revealEntry('../'),
+    await window.slate!.revealEntry('missing.md'),
+  ], document.document!.id);
+  for (const result of errors) expect(result.error).toBeTruthy();
+  await unlink(file);
+  const result = await page.evaluate(async () => {
+    const workspace = await window.slate!.ready();
+    return window.slate!.revealDocument(workspace.documents.find(item => item.name === 'sample.md')!.id);
+  });
+  expect(result.error).toBeTruthy();
+  expect(await application.evaluate(() => Reflect.get(globalThis, 'revealedPaths'))).toEqual([]);
+});
+
 test('sidebar rename keeps an open draft and updates its tab and filename search', async () => {
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   const source = page.getByRole('textbox', { name: 'Markdown source' });
@@ -2472,7 +2551,7 @@ test('native file drops copy multiple files into a folder and root without chang
   expect(await readFile(path.join(archive, 'attachment.pdf'))).toEqual(await readFile(binary));
   expect(await readFile(text, 'utf8')).toBe('# Imported\r\n');
   await expect(page.getByRole('button', { name: 'imported.md', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'attachment.pdf', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'attachment.pdf', exact: true })).toBeEnabled();
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue('# Keep my draft\n');
   await dropNativeFiles(page.getByLabel('Workspace folder', { exact: true }), [rootFile]);
   await expect.poll(() => readFile(path.join(directory, 'root-copy.txt'), 'utf8').catch(() => null)).toBe('Copy to root');

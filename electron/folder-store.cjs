@@ -2,7 +2,7 @@ const fs = require('node:fs/promises');
 const { constants } = require('node:fs');
 const path = require('node:path');
 const { MAX_BYTES } = require('./file-store.cjs');
-const { isTextFile } = require('./file-types.cjs');
+const { isTextFile, isOpenableFile } = require('./file-types.cjs');
 
 const HIDDEN_DIRECTORIES = new Set(['.git', 'node_modules', '.next', '.venv', '__pycache__']);
 
@@ -172,7 +172,7 @@ class FolderStore {
         name: entry.name,
         path: path.relative(this.root, path.join(absolute, entry.name)).split(path.sep).join('/'),
         kind: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'link',
-        editable: entry.isFile() && isTextFile(entry.name),
+        editable: entry.isFile() && isOpenableFile(entry.name),
       })),
       truncated: visible.length > 1500,
     };
@@ -200,7 +200,7 @@ class FolderStore {
         if (HIDDEN_DIRECTORIES.has(child.name)) continue;
         const absolute = path.join(directory, child.name);
         if (child.isDirectory()) queue.push(absolute);
-        else if (child.isFile() && isTextFile(child.name)) entries.push({
+        else if (child.isFile() && isOpenableFile(child.name)) entries.push({
           name: child.name, path: path.relative(root, absolute).split(path.sep).join('/'), kind: 'file', editable: true,
         });
       }

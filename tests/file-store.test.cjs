@@ -175,3 +175,26 @@ test('inline code and prices do not trigger unsupported Markdown warnings', asyn
     assert.equal(sourceOnlyReason(source), null, source);
   }
 });
+
+test('PDF and image previews preserve binary bytes and reject every text save path', async t => {
+  const { directory } = await fixture(t);
+  const bytes = Buffer.from([0, 255, 128, 13, 10, 37, 80, 68, 70]);
+  for (const extension of ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']) {
+    const file = path.join(directory, `preview.${extension}`);
+    await fs.writeFile(file, bytes);
+    const document = await readDocument(file);
+    assert.deepEqual(Buffer.from(document.content, 'base64'), bytes);
+    await assert.rejects(writeDocument(file, 'changed', document), /read-only/);
+    await assert.rejects(writeDocument(path.join(directory, 'copy.txt'), 'changed', document), /read-only/);
+    assert.deepEqual(await fs.readFile(file), bytes);
+  }
+  const office = path.join(directory, 'native.docx');
+  await fs.writeFile(office, bytes);
+  await assert.rejects(readDocument(office), /supported/);
+  await assert.rejects(writeDocument(office, 'changed'), /extension/);
+  const oversized = path.join(directory, 'large.pdf');
+  const handle = await fs.open(oversized, 'w');
+  await handle.truncate(50 * 1024 * 1024 + 1);
+  await handle.close();
+  await assert.rejects(readDocument(oversized), /50 MiB/);
+});

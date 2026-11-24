@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'pdfjs-dist/web/pdf_viewer.css';
 
 :root {
   color-scheme: light;
@@ -302,7 +303,8 @@ body:has(.desktop-mac) .diagram-dialog { top: 62px; height: calc(100dvh - 86px);
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
 
 .document-tabs { flex-shrink: 0; padding: 0 24px 8px; }
-.document-tab-list { display: flex; justify-content: flex-start; gap: 4px; width: 100%; height: 34px; padding: 0; background: transparent; overflow-x: auto; scrollbar-width: thin; }
+.document-tab-list { display: flex; justify-content: flex-start; gap: 4px; width: 100%; height: 34px; padding: 0; background: transparent; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.document-tab-list::-webkit-scrollbar { display: none; }
 .document-tab { display: flex; flex-shrink: 0; align-items: center; border-radius: 4px; }
 .document-tab[data-active='true'] { background: var(--ui-surface); }
 .document-tab [role='tab'] { gap: 10px; max-width: 230px; padding: 7px 8px 7px 12px; color: var(--ui-text); background: transparent; font-size: 12px; }
@@ -417,3 +419,103 @@ body:has(.desktop-mac) .diagram-dialog { top: 62px; height: calc(100dvh - 86px);
 }
 
 .new-file-template { display: grid; gap: 6px; margin-top: 12px; font-size: 13px; }
+
+.model-viewer { display: flex; flex: 1; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; color: #222; background: #fff; font-size: 13px; }
+.model-navigation { width: 100%; height: 100%; min-width: 0; overflow: auto; padding: 16px; border-right: 1px solid #ddd; }
+.model-navigation input { width: 100%; border: 1px solid #ddd; border-radius: 8px; margin: 12px 0; padding: 8px 10px; }
+.model-navigation button { display: block; text-align: left; width: 100%; padding: 10px; border-radius: 8px; }
+.model-navigation button[aria-pressed=true] { background: #ededed; }
+.model-navigation small { display: block; color: #666; font-size: 10px; }
+.model-canvas-area { height: 100%; min-height: 0; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.model-canvas-area header { padding: 20px 24px; display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid #ddd; }
+.model-canvas-area header p, .model-note { color: #666; font-size: 11px; }
+.model-note { padding: 8px 24px; }
+.model-canvas-scroll { overflow: auto; flex: 1; min-height: 0; background: white; }
+.model-canvas-scroll > svg { display: block; margin-inline: auto; background: white; max-width: none; }
+.model-inspector { width: 100%; height: 100%; min-width: 0; overflow: auto; border-left: 1px solid #ddd; padding: 16px; overflow-wrap: anywhere; }
+.model-inspector h2 { font-weight: 600; margin: 14px 0; }
+.model-inspector p, .model-inspector dl, .model-inspector details { margin: 12px 0; }
+.model-inspector dt { font-weight: 600; margin-top: 8px; }
+.model-inspector dd { white-space: pre-wrap; }
+.model-inspector button { display: block; text-align: left; color: #303030; margin: 8px 0; }
+
+/* SVG groups do not inherit the shared HTML button focus reset. */
+.model-shape:focus { outline: none; }
+.model-shape:focus-visible .model-shape-box,
+.model-shape:focus-visible .model-shape-line { stroke: #737373; stroke-width: 1px; stroke-dasharray: 3 2; }
+.model-frame-title { font: 10px Arial, sans-serif; fill: #737373; }
+@media (forced-colors: active) {
+  .model-shape:focus-visible .model-shape-box,
+  .model-shape:focus-visible .model-shape-line,
+  .model-shape.is-selected .model-shape-box,
+  .model-shape.is-selected .model-shape-line { stroke: Highlight; }
+}
+
+.model-navigation-status, .model-unavailable > p { color: #666; font-size: 11px; margin: 8px 0; }
+.model-unavailable { border-top: 1px solid #ddd; margin-top: 16px; padding-top: 12px; }
+.model-unavailable summary { cursor: pointer; color: #666; font-size: 12px; }
+.model-unavailable-item { padding: 8px; color: #666; }
+.model-shape-label { font-family: var(--font-geist-sans), Arial, sans-serif; color: #303030; white-space: pre-wrap; overflow-wrap: anywhere; }
+.model-stereotype { font-size: .85em; color: #666; margin-bottom: 2px; }
+.model-compartment { text-align: left; border-top: 1px solid #dedede; margin: 4px -7px 0; padding: 4px 7px 0; }
+.model-shape.is-selected > .model-shape-line { stroke: #525252; }
+.model-table-scroll { flex: 1; overflow: auto; padding: 14px; }
+.model-table { border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.model-table caption { text-align: left; padding-bottom: 12px; color: #666; }
+.model-table th, .model-table td { border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; min-width: 70px; max-width: 360px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.model-table th:first-child, .model-table td:first-child { border-left: 1px solid #ddd; }
+.model-table thead th { position: sticky; top: 0; background: #f4f4f4; border-top: 1px solid #ddd; z-index: 2; }
+.model-table button { text-align: left; text-decoration: underline; text-decoration-color: #bbb; text-underline-offset: 3px; }
+.model-matrix tbody th { position: sticky; left: 0; background: #fafafa; min-width: 180px; z-index: 1; }
+.model-matrix td { text-align: center; vertical-align: middle; }
+.model-interaction { padding: 12px 14px; max-height: 55%; overflow: auto; border-bottom: 1px solid #ddd; }
+.model-interaction > p { margin-bottom: 8px; }
+.model-interaction summary { cursor: pointer; }
+.model-interaction details > p { margin: 8px 0; }
+.model-interaction button { text-decoration: underline; text-decoration-color: #bbb; text-underline-offset: 3px; }
+.model-matrix thead th:not(:first-child) { min-width: 150px; overflow-wrap: normal; }
+.model-expressions { background: white; border-top: 1px solid #ddd; padding: 14px; }
+.model-expressions > div { margin-top: 12px; }
+.model-expressions button { text-decoration: underline; text-decoration-color: #bbb; }
+.model-expressions pre { white-space: pre-wrap; margin-top: 4px; font-size: 12px; }
+
+.model-shape-label.is-centered { height: 100%; display: flex; flex-direction: column; justify-content: center; }
+.model-shape-name { font-weight: 500; }
+.model-compartment-title { color: #666; text-align: center; font-size: .9em; margin-bottom: 3px; }
+.model-inspector-heading { display: flex; align-items: center; justify-content: space-between; }
+.model-inspector-heading button { color: #666; font-size: 20px; padding: 0 6px; margin: 0; }
+
+.model-panels { min-width: 0; min-height: 0; }
+.model-navigation button { overflow-wrap: anywhere; }
+.model-canvas-area header { flex-wrap: wrap; }
+.model-canvas-area header > div { min-width: 0; overflow-wrap: anywhere; }
+.model-canvas-area header label { flex-shrink: 0; color: #666; font-size: 12px; }
+.model-resize-handle::after { content: ''; position: absolute; inset: 0 2px; background: #e5e5e5; }
+.model-panels.is-stacked .model-resize-handle { width: 100%; height: 6px; }
+.model-panels.is-stacked .model-resize-handle::after { inset: 2px 0; }
+.model-panels.is-stacked .model-navigation, .model-panels.is-stacked .model-inspector { border: 0; }
+
+
+/* Read-only previews share the editor's quiet monochrome controls. */
+.file-preview { flex: 1; width: 100%; display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: #fff; }
+.preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 20px; padding: 12px 24px; border-bottom: 1px solid #eee; flex-shrink: 0; }
+.preview-actions { display: flex; align-items: center; gap: 4px; }
+.preview-actions button, .pdf-search button { width: 32px; height: 32px; }
+.preview-description, .pdf-page-control, .pdf-search > span { color: #666; font-size: 12px; }
+.pdf-page-control { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.pdf-page-control input { width: 48px; height: 30px; text-align: center; padding: 4px; }
+.pdf-search { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 24px; border-bottom: 1px solid #eee; }
+.pdf-search > input { width: 240px; min-width: 80px; height: 32px; }
+.pdf-search > span { min-width: 65px; }
+.pdf-password { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pdf-password input { max-width: 220px; }
+.preview-message { padding: 20px 28px; font-size: 13px; color: #555; }
+.pdf-viewport-wrapper { position: relative; flex: 1; min-height: 0; }
+.pdf-viewport { position: absolute; inset: 0; overflow: auto; background: #f8f8f8; }
+.pdf-preview .pdfViewer { padding: 24px 0; --page-margin: 0 auto 24px; --page-border: none; }
+.pdf-preview .pdfViewer .page { box-shadow: 0 1px 8px rgb(0 0 0 / 5%); }
+.pdf-preview .textLayer .highlight { --highlight-bg-color: rgb(0 0 0 / 12%); --highlight-selected-bg-color: rgb(0 0 0 / 25%); }
+.image-viewport { flex: 1; min-height: 0; overflow: auto; background: #fafafa; cursor: grab; touch-action: none; }
+.image-viewport:active { cursor: grabbing; }
+.image-stage { display: flex; align-items: center; justify-content: center; min-width: 100%; min-height: 100%; width: max-content; padding: 32px; }
+.image-stage img { flex: none; max-width: none; user-select: none; }

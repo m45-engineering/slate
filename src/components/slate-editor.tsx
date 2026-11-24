@@ -14,6 +14,11 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { ControlStructureEditor } from './control-structure-editor';
+import { ModelViewer } from './model-viewer';
+import { PdfViewer } from './pdf-viewer';
+import { ImageViewer } from './image-viewer';
+import type { PreviewHandle } from './preview-controls';
+import { isModelFile, isReadOnlyFile, isPreviewFile, isPdfFile, isImageFile, isExternalFile } from '../../electron/file-types.cjs';
 import { ReqifEditor } from './reqif-editor';
 import { isReqifFile, readReqif } from '@/lib/reqif/document';
 import type { IdentityState } from '@/lib/control-structure/schema';
@@ -60,8 +65,10 @@ export function SlateEditor() {
   const [source, setSource] = useState(EMPTY_DOCUMENT.content);
   const [savedSource, setSavedSource] = useState(EMPTY_DOCUMENT.content);
   const [mode, setMode] = useState<Mode>('visual');
+  const previewRef = useRef<PreviewHandle>(null);
   const [documentZoom, setDocumentZoom] = useState(100);
   const zoomDocument = useCallback((direction: 'in' | 'out' | 'reset') => {
+    if (previewRef.current) { previewRef.current.zoom(direction); return; }
     setDocumentZoom(current => direction === 'reset' ? 100 : ZOOM_LEVELS[Math.min(ZOOM_LEVELS.length - 1, Math.max(0, ZOOM_LEVELS.indexOf(current) + (direction === 'in' ? 1 : -1)))]);
   }, []);
   const [outlineOpen, setOutlineOpen] = useState(true);
@@ -134,6 +141,9 @@ export function SlateEditor() {
   const pendingRestore = useRef<{ id: string; scrollTop: number; selection: [number, number] | null } | null>(null);
   const sourceRef = useRef(source);
   const dirty = source !== savedSource;
+  const previewDocument = isPreviewFile(doc.name);
+  const readOnlyDocument = isReadOnlyFile(doc.name);
+  const modelDocument = isModelFile(doc.name);
   const markdownDocument = isMarkdown(doc.name);
   const language = fileLabel(doc.name);
   const reqifDocument = isReqifFile(doc.name, source);
@@ -178,11 +188,15 @@ export function SlateEditor() {
   const find = useFindReplace({ editor, source: controlActive ? controlFile.source : source, mode: controlActive || reqifDocument ? 'source' : mode, documentId: doc.id, sourceInput, onSourceChange: controlActive ? updateControlSource : setSource });
 
   const openDocumentFind = useCallback((replace = false) => {
+    if (previewRef.current) { previewRef.current.find(); return; }
+    if (isModelFile(docRef.current.name)) { document.querySelector<HTMLInputElement>('[aria-label="Find diagram"]')?.focus(); return; }
     if ((controlActive || reqifDocument) && mode === 'visual') setMode('source');
     find.openFind(replace);
   }, [controlActive, reqifDocument, mode, find.openFind]);
 
   const navigateDocumentFind = useCallback((direction: number) => {
+    if (previewRef.current) { previewRef.current.findNext(direction); return; }
+    if (isModelFile(docRef.current.name)) return;
     if ((controlActive || reqifDocument) && mode === 'visual') setMode('source');
     find.navigate(direction);
   }, [controlActive, reqifDocument, mode, find.navigate]);
@@ -281,6 +295,7 @@ export function SlateEditor() {
   }, [editor, mode, unsupported, markdownDocument, controlDocument, controlFile, controlState, reqifDocument, reqifState]);
 
   const save = useCallback(async (saveAs = false, confirmationId?: number): Promise<boolean> => {
+    if (isReadOnlyFile(docRef.current.name)) { setNotice('This file is read-only in Slate.'); return false; }
     if (savingRef.current) return false;
     if (!saveAs && !dirtyRef.current) return true;
     const content = sourceRef.current;
@@ -605,13 +620,13 @@ export function SlateEditor() {
     }}>
     <header className="titlebar">
       <div className="brand"><Tool label="Toggle sidebar" icon="panel" active={outlineOpen} onClick={() => setOutlineOpen(!outlineOpen)} /><span>Slate</span></div>
-      <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{(markdownDocument || controlDocument || reqifDocument) && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>
+      {readOnlyDocument ? <span className="source-caption">{modelDocument ? 'Model' : isPdfFile(doc.name) ? 'PDF' : 'Image'} · Read-only</span> : <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{(markdownDocument || controlDocument || reqifDocument) && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>}
       <div className="file-actions">
-        <Tool label={`Find (${isMac ? '⌘' : 'Ctrl+'}F)`} icon="search" onClick={() => openDocumentFind()} />
+        <Tool label={`Find (${isMac ? '⌘' : 'Ctrl+'}F)`} icon="search" disabled={isImageFile(doc.name)} onClick={() => openDocumentFind()} />
         {desktop && markdownDocument && <TooltipHint content={exporting ? 'Exporting PDF…' : 'Export PDF'}><Button variant="ghost" className="text-button export-button" aria-label={exporting ? 'Exporting PDF' : 'Export PDF'} disabled={exporting || saving} onClick={() => void exportPdf()}><Icon name="file" /><span>{exporting ? 'Exporting…' : 'Export PDF'}</span></Button></TooltipHint>}
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="text-button"><Icon name="plus" /><span>New</span><Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => void newDocument()}>New Markdown document</DropdownMenuItem><DropdownMenuItem onSelect={() => void newControlStructure()}>New control structure</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="text-button"><Icon name="open" /><span>Open</span><Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => void open()}>Open file…</DropdownMenuItem><DropdownMenuItem onSelect={() => void openFolder()}>Open folder…</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
-        <Button className="save-button" onClick={() => void save()} disabled={saving || !dirty || controlInvalid}><Icon name={saving ? 'more' : 'save'} size={15} /><span>{desktop ? 'Save' : 'Download'}</span></Button>
+        <Button className="save-button" onClick={() => void save()} disabled={readOnlyDocument || saving || !dirty || controlInvalid}><Icon name={saving ? 'more' : 'save'} size={15} /><span>{desktop ? 'Save' : 'Download'}</span></Button>
       </div>
     </header>
 
@@ -620,13 +635,14 @@ export function SlateEditor() {
       return { ...tab, dirty: Boolean(tab.id === doc.id ? dirty : draft ? draft.source !== draft.savedSource : tab.unsaved) };
     })} activeId={doc.id} onSelect={id => void selectTab(id)} onClose={id => void closeTab(id)}
       onCloseOthers={id => void closeTabs(tabs.filter(tab => tab.id !== id).map(tab => tab.id), id)}
-      onCloseAll={() => void closeTabs(tabs.map(tab => tab.id))} onReorder={ids => void reorderTabs(ids)} />
+      onCloseAll={() => void closeTabs(tabs.map(tab => tab.id))} onReorder={ids => void reorderTabs(ids)}
+      onReveal={id => { void window.slate?.revealDocument(id).then(result => { if (result.error) setNotice(result.error); }).catch(error => setNotice(String(error))); }} />
     {recovery && <div className="notice recovery" role="status"><span>An unsaved draft is available: {recovery.name}{recoveries.length > 1 ? ` (${recoveries.length} drafts)` : ''}</span><Button variant="ghost" size="sm" onClick={async () => {
       if (window.slate) await window.slate.newDocument({ name: recovery.name, content: recovery.content });
       else loadDocument({ ...recovery, id: crypto.randomUUID(), path: null, unsaved: true });
       clearRecovery(recovery.id);
     }}>Recover as new document</Button><Button variant="ghost" size="icon" aria-label="Dismiss recovery" onClick={() => clearRecovery(recovery.id)}><Icon name="close" size={14} /></Button></div>}
-    {diskChanged && <div className="notice warning" role="alert"><span>This file changed outside Slate. Your edits are still here.</span><Button variant="ghost" size="sm" onClick={() => void window.slate?.reload()}>Reload file</Button><Button variant="ghost" size="sm" onClick={() => void save(true)}>Save a copy</Button></div>}
+    {diskChanged && <div className="notice warning" role="alert"><span>{readOnlyDocument ? 'This file changed outside Slate.' : 'This file changed outside Slate. Your edits are still here.'}</span><Button variant="ghost" size="sm" onClick={() => void window.slate?.reload()}>Reload file</Button>{!readOnlyDocument && <Button variant="ghost" size="sm" onClick={() => void save(true)}>Save a copy</Button>}</div>}
     {reqifState?.error && <div className="notice" role="status"><span>{reqifState.error}</span><Button variant="ghost" size="sm" onClick={() => setMode('source')}>Edit source</Button></div>}
     {controlState?.error && <div className="notice" role="status"><span>{controlState.error}</span></div>}
     {unsupported && mode === 'source' && <div className="notice" role="status"><span>This document contains {unsupported}. Use Markdown to preserve it.</span></div>}
@@ -647,7 +663,7 @@ export function SlateEditor() {
       </>}
       <ResizablePanel id="editor" minSize={300}>
       <main className="editor-main">
-        <div style={controlActive || (reqifDocument && mode === 'visual') ? { display: 'none' } : undefined} className={`formatbar ${toolbarDisabled ? 'source-formatbar' : ''}`} aria-label="Formatting toolbar">
+        <div style={readOnlyDocument || controlActive || (reqifDocument && mode === 'visual') ? { display: 'none' } : undefined} className={`formatbar ${toolbarDisabled ? 'source-formatbar' : ''}`} aria-label="Formatting toolbar">
           {toolbarDisabled ? <span className="source-caption"><Icon name="code" />{markdownDocument ? 'Markdown source' : language}</span> : <>
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button variant="ghost" className="text-style-trigger" aria-label="Text style"><span>{editor?.isActive('heading') ? `Heading ${editor.getAttributes('heading').level}` : 'Normal text'}</span><Icon name="chevron" size={13} /></Button></DropdownMenuTrigger>
@@ -678,7 +694,7 @@ export function SlateEditor() {
             <div className="toolbar-spacer" /><Tool label="Undo" icon="undo" disabled={!editor?.can().undo()} onClick={() => editor?.chain().focus().undo().run()} /><Tool label="Redo" icon="redo" disabled={!editor?.can().redo()} onClick={() => editor?.chain().focus().redo().run()} />
           </>}
         </div>
-        {find.bar}
+        {!readOnlyDocument && find.bar}
         {linkOpen && mode === 'visual' && <form className="link-popover" onSubmit={event => {
           event.preventDefault();
           if (!linkUrl) editor?.chain().focus().extendMarkRange('link').unsetLink().run();
@@ -687,12 +703,15 @@ export function SlateEditor() {
           setLinkOpen(false);
         }}><Input autoFocus aria-label="Link URL" placeholder="https://…" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} /><Button type="submit" size="sm">Apply</Button><Button variant="ghost" size="sm" onClick={() => setLinkOpen(false)}>Cancel</Button></form>}
         {inTable && <div className="table-actions" aria-label="Table actions"><span>Table</span><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().addRowAfter().run()}>+ Row</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().addColumnAfter().run()}>+ Column</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteRow().run()}>Delete row</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteColumn().run()}>Delete column</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteTable().run()}>Delete table</Button></div>}
-        <div className={`document-scroll${controlActive || (reqifDocument && mode === 'visual') ? ' control-document-scroll' : ''}`} ref={scrollArea}>
+        <div className={`document-scroll${readOnlyDocument || controlActive || (reqifDocument && mode === 'visual') ? ' control-document-scroll' : ''}`} ref={scrollArea}>
           {controlActive && <ControlStructureEditor key={doc.id} mode={mode} onModeChange={setMode} onSave={() => void save()} saveDisabled={saving || !dirty || controlInvalid} notice={notice} source={controlFile.source} layout={controlFile.layout} result={controlFile.result} onChange={updateControlSource} inputRef={sourceInput} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
+          {modelDocument && <ModelViewer key={doc.id} content={doc.content} />}
+          {isPdfFile(doc.name) && <PdfViewer key={doc.id} ref={previewRef} document={doc} onError={setNotice} />}
+          {isImageFile(doc.name) && <ImageViewer key={doc.id} ref={previewRef} document={doc} onError={setNotice} />}
           {reqifState?.document && <div hidden={mode !== 'visual'} className="reqif-container"><ReqifEditor key={doc.id} document={reqifState.document} onChange={setSource} /></div>}
-          <div hidden={controlActive || (reqifDocument && mode === 'visual')} className={`paper ${mode === 'source' ? 'source-paper' : ''} ${!markdownDocument ? 'code-paper' : ''}`} style={{ zoom: documentZoom / 100 }}>
+          <div hidden={readOnlyDocument || controlActive || (reqifDocument && mode === 'visual')} className={`paper ${mode === 'source' ? 'source-paper' : ''} ${!markdownDocument ? 'code-paper' : ''}`} style={{ zoom: documentZoom / 100 }}>
             {/* Keep Tiptap mounted so its React plugins are not registered twice when switching views. */}
-            <div hidden={mode !== 'visual' || !markdownDocument}><EditorContent editor={editor} /></div>{mode === 'source' && !controlActive && <SourceEditor key={doc.id} ref={sourceInput} value={source} filename={doc.name} label={markdownDocument ? 'Markdown source' : 'Source editor'} onChange={setSource} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
+            <div hidden={mode !== 'visual' || !markdownDocument}><EditorContent editor={editor} /></div>{mode === 'source' && !readOnlyDocument && !controlActive && <SourceEditor key={doc.id} ref={sourceInput} value={source} filename={doc.name} label={markdownDocument ? 'Markdown source' : 'Source editor'} onChange={setSource} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
           </div>
         </div>
       </main>
@@ -705,11 +724,20 @@ export function SlateEditor() {
         <TooltipHint content="Slate on GitHub" side="top"><Button asChild variant="ghost" size="icon" className="footer-github"><a href="https://github.com/m45-engineering/slate" target="_blank" rel="noopener noreferrer" aria-label="Slate on GitHub"><img src="/github-mark.svg" width="16" height="16" alt="" /></a></Button></TooltipHint>
       </div>
       {(hoveredLink || focusedLink) && <span className="link-destination" aria-label="Link destination" title={hoveredLink || focusedLink}>{hoveredLink || focusedLink}</span>}
-      <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="zoom-control" aria-label="Document zoom">{documentZoom}%<Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuRadioGroup value={String(documentZoom)} onValueChange={value => setDocumentZoom(Number(value))}>{ZOOM_LEVELS.map(value => <DropdownMenuRadioItem key={value} value={String(value)}>{value}%</DropdownMenuRadioItem>)}</DropdownMenuRadioGroup></DropdownMenuContent></DropdownMenu>
+      {!previewDocument && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="zoom-control" aria-label="Document zoom">{documentZoom}%<Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuRadioGroup value={String(documentZoom)} onValueChange={value => setDocumentZoom(Number(value))}>{ZOOM_LEVELS.map(value => <DropdownMenuRadioItem key={value} value={String(value)}>{value}%</DropdownMenuRadioItem>)}</DropdownMenuRadioGroup></DropdownMenuContent></DropdownMenu>}
     </footer>
     <input ref={fileInput} type="file" hidden onChange={async event => {
       const file = event.target.files?.[0]; event.target.value = '';
       if (!file) return;
+      if (isExternalFile(file.name)) { setNotice('Use the Slate desktop app to open this file in its default app.'); return; }
+      if (isReadOnlyFile(file.name)) {
+        if (file.size > 50 * 1024 * 1024) { setNotice('Slate supports previews up to 50 MiB.'); return; }
+        const reader = new FileReader();
+        reader.onload = () => loadDocument({ id: crypto.randomUUID(), path: null, name: file.name, content: String(reader.result).split(',')[1] });
+        reader.onerror = () => setNotice('This file could not be read.');
+        reader.readAsDataURL(file);
+        return;
+      }
       if (file.size > 10 * 1024 * 1024) { setNotice('Slate supports documents up to 10 MB.'); return; }
       if (!isTextFile(file.name)) { setNotice('Choose a supported text or source-code file.'); return; }
       try {

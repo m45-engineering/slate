@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, type ReactNode, type MouseEvent, type KeyboardEvent, type DragEvent } from 'react';
 import { ChevronRight, File, FilePlus, FileText, Folder, FolderOpen, FolderPlus, RefreshCw, Search, X } from 'lucide-react';
 import type { FolderEntry, FolderListing, FolderSearch, LocalFolder } from '@/lib/document';
+import { revealLabel } from '@/lib/document';
+import { isExternalFile } from '../../electron/file-types.cjs';
 import { Button } from '@/components/ui/button';
 import { createControlFile } from '@/lib/control-structure/file';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -18,11 +20,11 @@ type OpenEntryMenu = (entry: FolderEntry, point: { x: number; y: number }) => vo
 type FileSelection = { paths: Set<string>; click(entry: FolderEntry, event: MouseEvent<HTMLButtonElement>): void; clear(): void };
 function entryMenuProps(entry: FolderEntry, onMenu: OpenEntryMenu) {
   return {
-    onContextMenu: (event: MouseEvent<HTMLButtonElement>) => {
+    onContextMenu: (event: MouseEvent<HTMLElement>) => {
       if (entry.kind === 'link') return;
       event.preventDefault(); onMenu(entry, { x: event.clientX, y: event.clientY });
     },
-    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
       if (entry.kind !== 'link' && (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
         event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); onMenu(entry, { x: rect.left, y: rect.bottom });
       }
@@ -103,7 +105,7 @@ function Entry({ entry, depth, currentPath, refreshKey, revealPath, onMenu, drag
       <CollapsibleContent><Directory relativePath={entry.path} depth={depth + 1} currentPath={currentPath} refreshKey={refreshKey} revealPath={revealPath} onMenu={onMenu} drag={drag} selection={selection} /></CollapsibleContent>
     </SidebarMenuItem>
   </Collapsible>;
-  return <SidebarMenuItem><TooltipHint content={entry.editable ? entry.path : `${entry.path} · ${entry.kind === 'link' ? 'symbolic link' : 'binary or unsupported file type'}`} side="right"><SidebarMenuButton
+  return <SidebarMenuItem><TooltipHint content={entry.editable ? `${entry.path}${isExternalFile(entry.name) ? ' · Opens in default app' : ''}` : `${entry.path} · ${entry.kind === 'link' ? 'symbolic link' : 'binary or unsupported file type'}`} side="right"><SidebarMenuButton
     {...entryMenuProps(entry, onMenu)}
     {...entryDragProps(entry, drag)}
     className={`file-tree-item ${entry.editable ? '' : 'context-file'}`}
@@ -353,7 +355,7 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
         <TabsContent value="files" className="folder-tab">
           {folder ? <>
             <div className="folder-controls">
-              <div className="folder-heading" {...dropProps('', drag)} aria-label="Workspace folder"><TooltipHint content={folder.path} side="right"><span>{folder.name}</span></TooltipHint><div className="folder-heading-actions">
+              <div className="folder-heading" {...entryMenuProps({ path: '', name: folder.name, kind: 'directory', editable: false }, openMenu)} {...dropProps('', drag)} aria-label="Workspace folder"><TooltipHint content={folder.path} side="right"><span>{folder.name}</span></TooltipHint><div className="folder-heading-actions">
                 <TooltipHint content="New file" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="New file" onClick={() => beginCreate('new-file')}><FilePlus /></Button></TooltipHint>
                 <TooltipHint content="New folder" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="New folder" onClick={() => beginCreate('new-folder')}><FolderPlus /></Button></TooltipHint>
                 <TooltipHint content="Refresh folder" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="Refresh folder" onClick={() => setRefreshKey(value => value + 1)}><RefreshCw /></Button></TooltipHint>
@@ -376,18 +378,20 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
     <DropdownMenu open={Boolean(menu)} onOpenChange={open => { if (!open) setMenu(null); }}>
       <DropdownMenuTrigger asChild><Button tabIndex={-1} aria-hidden="true" className="tab-menu-anchor" style={{ left: menu?.x ?? 0, top: menu?.y ?? 0 }} /></DropdownMenuTrigger>
       <DropdownMenuContent align="start" onCloseAutoFocus={event => event.preventDefault()}>
+        <DropdownMenuItem onSelect={() => { if (menu) void window.slate?.revealEntry(menu.entry.path).then(result => { if (result.error) onError(result.error); }).catch(error => onError(String(error))); }}>{revealLabel(typeof window === 'undefined' ? undefined : window.slate?.platform)}</DropdownMenuItem>
+        <DropdownMenuSeparator />
         {menu?.entry.kind === 'directory' && <>
           <DropdownMenuItem onSelect={() => beginCreate('new-file', menu.entry)}>New File…</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => beginCreate('new-file', menu.entry, 'control')}>New control structure…</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => beginCreate('new-folder', menu.entry)}>New Folder…</DropdownMenuItem>
-          <DropdownMenuSeparator />
+          {menu.entry.path && <DropdownMenuSeparator />}
         </>}
-        {menu && menu.paths.length > 1 ? <DropdownMenuItem onSelect={() => void moveFiles(menu.paths)}>Move {menu.paths.length} files…</DropdownMenuItem> : <>
+        {menu?.entry.path && (menu.paths.length > 1 ? <DropdownMenuItem onSelect={() => void moveFiles(menu.paths)}>Move {menu.paths.length} files…</DropdownMenuItem> : <>
           <DropdownMenuItem onSelect={() => { if (menu) beginAction('rename', menu.entry); }}>Rename…</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => { if (menu) void move(menu.entry); }}>Move…</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => { if (menu) beginAction('delete', menu.entry); }}>Delete…</DropdownMenuItem>
-        </>}
+        </>)}
       </DropdownMenuContent>
     </DropdownMenu>
     <Dialog open={Boolean(action)} onOpenChange={open => { if (!open && !working) setAction(null); }}>

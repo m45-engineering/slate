@@ -2,7 +2,7 @@ export { isMarkdown, isTextFile, fileLabel } from '../../electron/file-types.cjs
 
 export type SlateDocument = { id: string; path: string | null; name: string; content: string; unsaved?: boolean };
 export type WorkspaceDocuments = { documents: SlateDocument[]; activeId: string; replaceId?: string };
-export type FileResult = { document?: SlateDocument; canceled?: boolean; conflict?: boolean; error?: string };
+export type FileResult = { document?: SlateDocument; openedExternally?: boolean; canceled?: boolean; conflict?: boolean; error?: string };
 export type LocalFolder = { path: string; name: string };
 export type FolderEntry = { path: string; name: string; kind: 'directory' | 'file' | 'link'; editable: boolean };
 export type FolderListing = { entries?: FolderEntry[]; truncated?: boolean; error?: string };
@@ -14,6 +14,8 @@ export interface DesktopBridge {
   ready(): Promise<WorkspaceDocuments>;
   open(): Promise<FileResult>;
   openLink(href: string, id: string): Promise<FileResult & { fragment?: string }>;
+  openDefault(id: string): Promise<{ openedExternally?: boolean; error?: string }>;
+  revealDocument(id: string): Promise<{ canceled?: boolean; error?: string }>;
   newDocument(draft?: { name: string; content: string }): Promise<FileResult>;
   save(content: string, saveAs: boolean, options?: { id?: string; path: string | null; confirmationId?: number }): Promise<FileResult>;
   exportPdf(content: string, id: string): Promise<{ path?: string; canceled?: boolean; error?: string }>;
@@ -34,6 +36,7 @@ export interface DesktopBridge {
   listFolder(relativePath: string): Promise<FolderListing>;
   searchFolder(query: string, refresh: boolean): Promise<FolderSearch>;
   openFile(relativePath: string): Promise<FileResult>;
+  revealEntry(relativePath: string): Promise<{ canceled?: boolean; error?: string }>;
   createEntry(parent: string, name: string, kind: 'file' | 'directory', content?: string): Promise<{ changed?: boolean; path?: string; error?: string; canceled?: boolean }>;
   renameEntry(path: string, name: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
   moveEntry(path: string, destination?: string): Promise<{ changed?: boolean; canceled?: boolean; error?: string }>;
@@ -49,6 +52,10 @@ declare global { interface Window {
 } }
 
 export const EMPTY_DOCUMENT: SlateDocument = { id: 'initial', path: null, name: 'Untitled.md', content: '' };
+
+export function revealLabel(platform?: string): string {
+  return platform === 'darwin' ? 'Reveal in Finder' : platform === 'win32' ? 'Reveal in File Explorer' : 'Reveal in File Manager';
+}
 
 // Keep constructs outside this version's visual editing vocabulary in source mode.
 // In particular, HTML comments and front matter must never silently disappear.

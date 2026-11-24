@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.10 - 2026-11-24
+
+- Preview Cameo/MagicDraw `.mdzip` models with saved diagram positions, simplified SysML v1/UML notation, element properties, generic tables, and relationship matrices. Resize the navigation and details panes and use restrained monochrome selection styling.
+- View PDFs locally with page navigation, fit and zoom, selectable text, search, and password entry. View PNG, JPEG, WebP, GIF, and SVG with fit, actual size, zoom, and pan. Keep previews read-only and offer Open in default app.
+- Open Word and Excel files in the operating system's default apps without creating Slate tabs. Include previews and native documents in file browsing and filename search.
+- Reveal sidebar files, folders, search results, and saved tabs in Finder or File Explorer from their context menus.
+- Hide tab-strip scrollbars while retaining horizontal scrolling and keyboard navigation. Allow model tabs to close normally.
+
 ## 0.1.9 - 2026-11-23
 
 - Browse ReqIF specification hierarchies, search requirements, inspect typed attributes, and follow declared relations in Visual view.

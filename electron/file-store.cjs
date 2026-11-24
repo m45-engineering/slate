@@ -1,22 +1,24 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { isTextFile } = require('./file-types.cjs');
+const { isTextFile, isReadOnlyFile, isExternalFile, isOpenableFile } = require('./file-types.cjs');
 
 const MAX_BYTES = 10 * 1024 * 1024;
 async function readDocument(filePath) {
-  if (!isTextFile(filePath)) throw new Error('Choose a supported text or source-code file extension.');
+  if (!isOpenableFile(filePath) || isExternalFile(filePath)) throw new Error('Choose a supported document, image, or source-code file.');
   const handle = await fs.open(filePath, 'r');
   let bytes;
+  const limit = isReadOnlyFile(filePath) ? 50 * 1024 * 1024 : MAX_BYTES;
   try {
     const stat = await handle.stat();
-    if (!stat.isFile()) throw new Error('Choose a text file.');
-    if (stat.size > MAX_BYTES) throw new Error('Slate supports documents up to 10 MB.');
+    if (!stat.isFile()) throw new Error('Choose a file.');
+    if (stat.size > limit) throw new Error(`Slate supports ${isReadOnlyFile(filePath) ? 'previews up to 50 MiB' : 'documents up to 10 MB'}.`);
     bytes = await handle.readFile();
-    if (bytes.length > MAX_BYTES) throw new Error('Slate supports documents up to 10 MB.');
+    if (bytes.length > limit) throw new Error(`Slate supports ${isReadOnlyFile(filePath) ? 'previews up to 50 MiB' : 'documents up to 10 MB'}.`);
   } finally {
     await handle.close();
   }
+  if (isReadOnlyFile(filePath)) return { path: filePath, name: path.basename(filePath), content: bytes.toString('base64'), bytes };
   let text;
   try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
   catch { throw new Error('This file is not valid UTF-8 text. Binary files cannot be edited in Slate.'); }
@@ -42,6 +44,7 @@ async function diskMatches(document) {
 }
 
 async function writeDocument(filePath, content, previous = null) {
+  if (isReadOnlyFile(filePath) || (previous && isReadOnlyFile(previous.path))) throw new Error('This file is read-only in Slate.');
   if (!isTextFile(filePath)) throw new Error('Save with a supported text or source-code file extension.');
   if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > MAX_BYTES) {
     throw new Error('Slate supports documents up to 10 MB.');
