@@ -3779,3 +3779,24 @@ test('controller row trash actions confirm before removal and cancel preserves e
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(input).toHaveValue(source);
 });
+
+
+test('switching controller entries keeps the click target stable until the next editor opens', async () => {
+  const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
+  await page.evaluate(text => window.slate!.newDocument({ name: 'switch-entries.yaml', content: text }), content);
+  await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Show details', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Component details', exact: true });
+  await editor.getByRole('button', { name: 'Edit cs-vigil1-77', exact: true }).click();
+  const first = editor.getByRole('textbox', { name: 'Process model entry cs-vigil1-77', exact: true });
+  await first.fill('Updated first entry.');
+  const next = editor.getByRole('button', { name: 'Edit cs-vigil1-78', exact: true });
+  const before = (await next.boundingBox())!;
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+  await page.mouse.down();
+  await expect(first).toBeFocused();
+  expect(await next.boundingBox()).toEqual(before);
+  await page.mouse.up();
+  await expect(editor.getByRole('textbox', { name: 'Process model entry cs-vigil1-78', exact: true })).toBeFocused();
+  await expect(editor.getByRole('button', { name: 'Edit cs-vigil1-77', exact: true })).toHaveText('Updated first entry.');
+});
