@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type RefObject } from 'react';
-import { Plus, Link2, Pencil, Trash2, Workflow, Undo2, Redo2, CircleHelp, X, Expand, Minimize2, Save, Copy, Check, Image as ImageIcon } from 'lucide-react';
+import { Plus, Link2, Trash2, Workflow, Undo2, Redo2, CircleHelp, Expand, Minimize2, Save, Copy, Check, Image as ImageIcon } from 'lucide-react';
 import { EditorIconButton } from './editor-icon-button';
 import { CONTROL_EXAMPLE } from '@/lib/control-structure/example';
 import { NativeSelect } from './ui/native-select';
@@ -11,12 +11,11 @@ import { Button } from './ui/button';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './ui/resizable';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from './ui/dialog';
 import { compileAuthoringSource } from '@/lib/control-structure/resolve';
-import { renameComponent } from '@/lib/control-structure/identity';
-import { addVisualComponent, addVisualConnection, deleteVisualConnection, deleteVisualComponent, renameVisualConnection, createControllerDraft, addControllerDraftItem, applyControllerDraft, type ControllerDraft } from '@/lib/control-structure/visual-edits';
-import { RELATIONSHIPS, TYPES, type AuthoringResult, type ComponentType, type IdentityState } from '@/lib/control-structure/schema';
+import { addVisualComponent, addVisualConnection, deleteVisualConnection, deleteVisualComponent, editVisualComponent, editVisualConnection, createControllerDraft, addControllerDraftItem, applyControllerDraft, type ControllerDraft } from '@/lib/control-structure/visual-edits';
+import { RELATIONSHIPS, TYPES, type AuthoringResult, type ComponentType, type RelationshipType, type IdentityState } from '@/lib/control-structure/schema';
 import type { ControlLayout } from '@/lib/control-structure/layout';
 import type { Match } from '@/lib/find';
 import { controlDiagramPng } from '@/lib/control-structure/image';
@@ -31,7 +30,6 @@ export function ControlStructureEditor({ source, result: supplied, layout = {}, 
   const ownInput = useRef<HTMLTextAreaElement>(null);
   const input = inputRef ?? ownInput;
   const pendingChange = useRef<{ source: string; identity?: IdentityState } | null>(null);
-  const detailHeight = useRef(240);
   const result = supplied ?? compileAuthoringSource(source);
   const history = useRef({ entries: [{ source, identity: result.identity, layout }], index: 0, typedAt: 0 });
   const currentHistory = history.current;
@@ -43,14 +41,18 @@ export function ControlStructureEditor({ source, result: supplied, layout = {}, 
   } else { currentHistory.entries[currentHistory.index].identity = result.identity; currentHistory.entries[currentHistory.index].layout = layout; }
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState('');
-  const [action, setAction] = useState<'component' | 'connection' | 'rename' | 'delete' | 'detail' | null>(null);
+  const [action, setAction] = useState<'component' | 'connection' | 'edit' | 'delete' | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [confirmRoleChange, setConfirmRoleChange] = useState(false);
+  const openingDialog = useRef(false);
   const [controllerDraft, setControllerDraft] = useState<ControllerDraft | null>(null);
   const [editingItem, setEditingItem] = useState<{ id: string; original: string } | null>(null);
+  const [itemToRemove, setItemToRemove] = useState<{ kind: ControllerDraft['sections'][number]['kind']; id: string; text: string } | null>(null);
   const [name, setName] = useState('');
   const [role, setRole] = useState<ComponentType>('controller');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [relationship, setRelationship] = useState<typeof RELATIONSHIPS[number]>('control');
+  const [relationship, setRelationship] = useState<RelationshipType>('control');
   const [error, setError] = useState('');
   const [help, setHelp] = useState(false);
   const [copyStatus, setCopyStatus] = useState<{ id: string; message: string } | null>(null);
@@ -73,12 +75,12 @@ export function ControlStructureEditor({ source, result: supplied, layout = {}, 
   }
   async function copyDetails() {
     const text = component ? [
-      `${component.name} (${component.type ?? 'Unclassified'}) [${component.id}]`,
-      ...details.map(detail => [
-        `${detail.kind === 'process_model' ? 'Process model' : 'Control algorithm'} [${detail.id}]`,
-        ...(detail.kind === 'process_model' ? detail.variables : detail.rules).map(item => `[${item.id}] ${item.text}`),
-      ].join('\n')),
-    ].join('\n\n') : connection ? `${connection.label} [${connection.id}]\n${connection.source.name} → ${connection.target.name} · ${connection.relationship}` : '';
+      `${name} (${role}) [${component.id}]`,
+      ...(role === 'controller' ? controllerDraft?.sections.filter(section => section.items.length).map(section => [
+        `${section.kind === 'process_model' ? 'Process model' : 'Control algorithm'} [${section.id}]`,
+        ...section.items.map(item => `[${item.id}] ${item.text}`),
+      ].join('\n')) ?? [] : []),
+    ].join('\n\n') : connection ? `${relationship === 'observation' ? 'Observes' : name} [${connection.id}]\n${result.graph.components.find(c => c.id === from)?.name} → ${result.graph.components.find(c => c.id === to)?.name} · ${relationship}` : '';
     try {
       if (window.slate) await window.slate.copyText(text);
       else await navigator.clipboard.writeText(text);
@@ -112,8 +114,10 @@ export function ControlStructureEditor({ source, result: supplied, layout = {}, 
     requestAnimationFrame(() => { element.focus(); element.setSelectionRange(from, to); });
     element.closest('.control-source-scroll')?.scrollTo({ top: Math.max(0, source.slice(0, from).split('\n').length - 3) * 26 });
   }
-  function select(id: string) {
+  function select(id: string, anchor?: { x: number; y: number }) {
     setSelected(id);
+    setMenu(id && anchor ? anchor : null);
+    openingDialog.current = false;
     const entry = result.graph.components.find(c => c.id === id)?.mentions[0] ?? result.graph.connections.find(c => c.id === id);
     if (entry && mode === 'source') focusRange(entry.from, entry.to);
   }
@@ -137,29 +141,47 @@ export function ControlStructureEditor({ source, result: supplied, layout = {}, 
     const snapshot = currentHistory.entries[index];
     onChange(snapshot.source, snapshot.identity, snapshot.layout);
   }
-  function apply() {
-    try {
-      if (action === 'delete' && component) { pendingChange.current = { source: deleteVisualComponent(result, component.id).result.source }; setSelected(''); }
-      if (action === 'component') pendingChange.current = { source: addVisualComponent(result, name, role).result.source };
-      if (action === 'connection') pendingChange.current = { source: addVisualConnection(result, { sourceId: from, targetId: to, label: name, relationship }).result.source };
-      if (action === 'rename' && component) {
-        const renamed = renameComponent(source, result.identity, component.name, name);
-        pendingChange.current = { source: renamed.source, identity: renamed.identity };
-      }
-      if (action === 'rename' && connection) {
-        const renamed = renameVisualConnection(result, connection.id, name).result;
-        pendingChange.current = { source: renamed.source, identity: renamed.identity };
-      }
-      if (action === 'detail' && controllerDraft && component) {
-        const edited = applyControllerDraft(result, component.id, controllerDraft).result;
-        pendingChange.current = { source: edited.source, identity: edited.identity };
-      }
-      setAction(null); setError('');
-    } catch (error) { setError((error as Error).message); }
+  function beginEdit() {
+    openingDialog.current = true;
+    setMenu(null); setError(''); setConfirmRoleChange(false); setEditingItem(null); setCopyStatus(null);
+    setName(component?.name ?? connection?.label ?? '');
+    setRole(component?.type ?? 'controller');
+    setFrom(connection?.sourceId ?? ''); setTo(connection?.targetId ?? '');
+    setRelationship(connection?.relationship ?? 'control');
+    setControllerDraft(component ? createControllerDraft(result, component.id) : null);
+    setAction('edit');
   }
+  function apply(confirmed = false) {
+    if (action === 'edit' && component && role !== 'controller' && details.length && !confirmed) {
+      setConfirmRoleChange(true); return;
+    }
+    try {
+      if (action === 'delete') {
+        if (component) pendingChange.current = { source: deleteVisualComponent(result, component.id).result.source };
+        else if (connection) pendingChange.current = { source: deleteVisualConnection(result, connection.id).result.source };
+        setSelected('');
+      }
+      if (action === 'component') pendingChange.current = { source: addVisualComponent(result, name, role).result.source };
+      if (action === 'connection') pendingChange.current = { source: addVisualConnection(result, { sourceId: from, targetId: to, label: name, relationship: relationship as typeof RELATIONSHIPS[number] }).result.source };
+      if (action === 'edit' && component) {
+        let next = result;
+        if (role === 'controller' && component.type === 'controller' && controllerDraft) next = applyControllerDraft(next, component.id, controllerDraft).result;
+        next = editVisualComponent(next, component.id, { name, type: role, removeDetails: confirmed }).result;
+        if (role === 'controller' && component.type !== 'controller' && controllerDraft) next = applyControllerDraft(next, component.id, controllerDraft).result;
+        pendingChange.current = { source: next.source, identity: next.identity };
+      }
+      if (action === 'edit' && connection) {
+        const next = editVisualConnection(result, connection.id, { sourceId: from, targetId: to, label: name, relationship }).result;
+        pendingChange.current = { source: next.source, identity: next.identity };
+      }
+      setConfirmRoleChange(false); setAction(null); setError('');
+    } catch (error) { setConfirmRoleChange(false); setError((error as Error).message); }
+  }
+  const editingController = action === 'edit' && !!component && role === 'controller';
+  const editingConnection = action === 'connection' || (action === 'edit' && !!connection);
   const diagnostics = result.diagnostics.filter(d => d.category !== 'profile');
   const content = <div ref={container} className="control-structure-editor" onKeyDownCapture={event => {
-    if (!(event.metaKey || event.ctrlKey) || action || help) return;
+    if (!(event.metaKey || event.ctrlKey) || action || help || menu) return;
     const key = event.key.toLowerCase();
     if (key !== 'z' && key !== 'y') return;
     event.preventDefault(); event.stopPropagation();
@@ -170,8 +192,7 @@ export function ControlStructureEditor({ source, result: supplied, layout = {}, 
       {expanded && <Tabs value={mode} onValueChange={value => onModeChange(value as 'visual' | 'source')}><TabsList className="mode-switch" aria-label="Control structure view"><TabsTrigger value="visual">Visual</TabsTrigger><TabsTrigger value="source">Source</TabsTrigger></TabsList></Tabs>}
       <EditorIconButton label="Add component" disabled={!result.valid} onClick={() => { setAction('component'); setName(''); setError(''); }}><Plus aria-hidden="true" /></EditorIconButton>
       <EditorIconButton label="Add connection" disabled={!result.valid || result.graph.components.length < 2} onClick={() => { setAction('connection'); setFrom(component?.id ?? result.graph.components[0]?.id ?? ''); setTo(result.graph.components.find(c => c.id !== (component?.id ?? result.graph.components[0]?.id))?.id ?? ''); setName(''); setError(''); }}><Link2 aria-hidden="true" /></EditorIconButton>
-      <EditorIconButton label="Rename" hint={component ? 'Rename component' : connection?.relationship === 'observation' ? 'Observation labels are fixed by M45 syntax' : connection ? 'Rename connection label' : 'Select a component or connection to rename'} disabled={!result.valid || (!component && (!connection || connection.relationship === 'observation'))} onClick={() => { setAction('rename'); setName(component?.name ?? connection!.label); setError(''); }}><Pencil aria-hidden="true" /></EditorIconButton>
-      <EditorIconButton label={component ? 'Delete component' : connection ? 'Delete connection' : 'Delete selection'} hint={component ? 'Delete component and its connections' : connection ? 'Delete connection' : 'Select a component or connection to delete'} disabled={!result.valid || (!connection && !component)} onClick={() => { if (component) { setAction('delete'); setError(''); } else if (connection) { changeSource(deleteVisualConnection(result, connection.id).result.source); setSelected(''); } }}><Trash2 aria-hidden="true" /></EditorIconButton>
+      <EditorIconButton className="destructive-action" label={component ? 'Delete component' : connection ? 'Delete connection' : 'Delete selection'} hint={component ? 'Delete component and its connections' : connection ? 'Delete connection' : 'Select a component or connection to delete'} disabled={!result.valid || (!connection && !component)} onClick={() => { setMenu(null); setAction('delete'); setError(''); }}><Trash2 aria-hidden="true" /></EditorIconButton>
       <EditorIconButton label="Auto-arrange" hint={'Auto-arrange · Reset manual positions'} disabled={!result.valid || !Object.keys(layout).length} onClick={() => changeSource(source, undefined, false, {})}><Workflow aria-hidden="true" /></EditorIconButton>
       <EditorIconButton label="Undo" hint={'Undo · ⌘ / Ctrl Z'} disabled={currentHistory.index === 0} onClick={() => changeHistory(-1)}><Undo2 aria-hidden="true" /></EditorIconButton>
       <EditorIconButton label="Redo" hint={'Redo · ⌘ / Ctrl Shift Z'} disabled={currentHistory.index === currentHistory.entries.length - 1} onClick={() => changeHistory(1)}><Redo2 aria-hidden="true" /></EditorIconButton>
@@ -189,60 +210,60 @@ export function ControlStructureEditor({ source, result: supplied, layout = {}, 
         {diagnostics.length > 0 && <div className="control-diagnostics" aria-label="Control structure diagnostics">{diagnostics.map((d, index) => <button type="button" className={d.severity} key={index} onClick={() => focusRange(d.from, d.to)}>Line {source.slice(0, d.from).split('\n').length}: {d.message}</button>)}</div>}
       </section>
       <section hidden={mode !== 'visual'} className="control-diagram" aria-label="Control structure preview pane">
-        <ResizablePanelGroup orientation="vertical" className="control-panels">
-        <ResizablePanel id="control-canvas" minSize="20%" className="control-canvas-panel">
-        <ControlStructurePreview expandable={false} fill positions={layout} onMove={mode === 'visual' ? positions => changeSource(source, undefined, false, positions) : undefined} source={source} result={result} selectedId={selected} onSelect={select} />
-        </ResizablePanel>
-        {(component || connection) && <>
-        <ResizableHandle aria-label="Resize controller details" className="control-details-resize-handle" />
-        <ResizablePanel id="control-details" defaultSize={detailHeight.current} minSize={80} maxSize="80%" groupResizeBehavior="preserve-pixel-size" onResize={size => { if (size.inPixels > 0) detailHeight.current = size.inPixels; }}>
-        <div className="control-details">
-          <div className="control-details-header">
-            <strong>{component?.name ?? connection?.label}</strong>
-            {component && <span>{component.type ?? 'Unclassified'}</span>}
-            <div className="control-details-actions">
-              <span role="status">{copyMessage}</span>
-              {component?.type === 'controller' && <EditorIconButton label="Edit controller details" onClick={() => { setControllerDraft(createControllerDraft(result, component.id)); setEditingItem(null); setError(''); setAction('detail'); }}><Pencil aria-hidden="true" /></EditorIconButton>}
-              <EditorIconButton label="Copy inspection contents" hint={copyMessage === 'Copied' ? 'Copied' : 'Copy inspection contents'} onClick={copyDetails}>{copyMessage === 'Copied' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}</EditorIconButton>
-              <EditorIconButton label="Clear diagram selection" onClick={() => setSelected('')}><X aria-hidden="true" /></EditorIconButton>
-            </div>
-          </div>
-          {component && details.map(d => <section key={d.kind}><div className="control-detail-heading"><button type="button" onClick={() => focusRange(d.from, d.headerTo)}>{d.kind === 'process_model' ? 'Process model' : 'Control algorithm'}</button><code className="control-reference">{d.id}</code></div><ul className="control-detail-items">{(d.kind === 'process_model' ? d.variables : d.rules).map(item => <li key={item.id} data-controller-item-id={item.id}><code className="control-reference">{item.id}</code><button className="control-detail-text" type="button" onClick={() => focusRange(item.from, item.to)}>{item.text}</button></li>)}</ul></section>)}
-          {connection && <><p>{connection.source.name} → {connection.target.name} · {connection.relationship}</p><button type="button" onClick={() => focusRange(connection.from, connection.to)}>Edit source</button></>}
-        </div>
-        </ResizablePanel>
-        </>}
-        </ResizablePanelGroup>
+        <ControlStructurePreview expandable={false} fill positions={layout} onMove={mode === 'visual' ? positions => { setMenu(null); changeSource(source, undefined, false, positions); } : undefined} source={source} result={result} selectedId={selected} onSelect={select} />
         <p className="control-legend">Solid: control · Blue dashed: feedback · Gray dashed: information</p>
       </section>
     </div>
-    <Dialog open={!!action} onOpenChange={open => { if (!open) setAction(null); }}><DialogContent className={action === 'detail' ? 'controller-edit-dialog' : undefined} onCloseAutoFocus={event => {
+    <DropdownMenu modal={false} open={!!menu} onOpenChange={open => { if (!open) setMenu(null); }}>
+      <DropdownMenuTrigger asChild><button type="button" tabIndex={-1} aria-hidden="true" className="tab-menu-anchor" style={{ left: menu?.x ?? 0, top: menu?.y ?? 0 }} /></DropdownMenuTrigger>
+      <DropdownMenuContent className="control-context-menu" aria-label="Diagram actions" align="center" sideOffset={8} onCloseAutoFocus={event => {
+        event.preventDefault();
+        if (!openingDialog.current) container.current?.querySelector<HTMLElement>('.diagram-viewport')?.focus({ preventScroll: true });
+      }}>
+        <DropdownMenuItem disabled={!result.valid} onSelect={beginEdit}>Show details</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+    <Dialog open={!!action} onOpenChange={open => { if (!open) setAction(null); }}><DialogContent className={editingController ? 'controller-edit-dialog' : undefined} onCloseAutoFocus={event => {
       event.preventDefault();
       if (mode === 'source') input.current?.focus();
       else container.current?.querySelector<HTMLElement>('.diagram-viewport')?.focus();
       const change = pendingChange.current;
       pendingChange.current = null;
       if (change) changeSource(change.source, change.identity);
-    }}><DialogTitle>{action === 'component' ? 'Add component' : action === 'connection' ? 'Add connection' : action === 'delete' ? 'Delete component' : action === 'detail' ? 'Edit controller details' : connection ? 'Rename connection label' : 'Rename component'}</DialogTitle><DialogDescription>{action === 'delete' ? `Remove ${component?.name}, its ${result.graph.connections.filter(c => c.sourceId === selected || c.targetId === selected).length} connections, and its controller details? You can undo this change.` : action === 'detail' ? <>{component?.name} <code className="control-reference">{component?.id}</code></> : 'Updates the written structure and live preview together.'}</DialogDescription>
-      <form className={action === 'detail' ? 'controller-edit-form' : 'control-form'} onSubmit={event => { event.preventDefault(); apply(); }}>
-        {action === 'connection' && <><label>From<NativeSelect aria-label="From component" value={from} onChange={e => setFrom(e.target.value)}>{result.graph.components.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect></label><label>To<NativeSelect aria-label="To component" value={to} onChange={e => setTo(e.target.value)}>{result.graph.components.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect></label><label>Kind<NativeSelect aria-label="Connection kind" value={relationship} onChange={e => setRelationship(e.target.value as typeof relationship)}>{RELATIONSHIPS.map(r => <option key={r}>{r}</option>)}</NativeSelect></label></>}
-        {action === 'detail' && controllerDraft ? <div className="controller-edit-columns">{controllerDraft.sections.map(section => <section className="controller-edit-section" key={section.kind} aria-label={section.kind === 'process_model' ? 'Process model' : 'Control algorithm'}>
+    }}><DialogTitle>{action === 'component' ? 'Add component' : action === 'connection' ? 'Add connection' : action === 'delete' ? component ? 'Delete component' : 'Delete connection' : connection ? 'Connection details' : 'Component details'}</DialogTitle><DialogDescription>{action === 'delete' ? component ? `Remove ${component.name}, its ${result.graph.connections.filter(c => c.sourceId === selected || c.targetId === selected).length} connections, and its controller details? You can undo this change.` : `Remove “${connection?.label}” from ${connection?.source.name} to ${connection?.target.name}? You can undo this change.` : action === 'edit' ? <>{component?.name ?? connection?.label} <code className="control-reference">{component?.id ?? connection?.id}</code></> : 'Updates the written structure and live preview together.'}</DialogDescription>
+      <form className={editingController ? 'controller-edit-form' : 'control-form'} onSubmit={event => { event.preventDefault(); apply(); }}>
+        <div className={editingController ? 'control-edit-properties' : 'control-form'}>
+        {editingConnection && <><label>From<NativeSelect aria-label="From component" value={from} onChange={e => setFrom(e.target.value)}>{result.graph.components.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect></label><label>To<NativeSelect aria-label="To component" value={to} onChange={e => setTo(e.target.value)}>{result.graph.components.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect></label><label>Kind<NativeSelect aria-label="Connection kind" value={relationship} onChange={e => setRelationship(e.target.value as RelationshipType)}>{[...RELATIONSHIPS, ...(action === 'edit' ? ['observation'] : [])].map(r => <option key={r}>{r}</option>)}</NativeSelect></label></>}
+        {action !== 'delete' && <label>{editingConnection ? 'Label' : 'Name'}<Input aria-label={editingConnection ? 'Connection label' : 'Component name'} autoFocus disabled={editingConnection && relationship === 'observation'} value={editingConnection && relationship === 'observation' ? 'Observes' : name} onChange={e => setName(e.target.value)} /></label>}
+        {(action === 'component' || (action === 'edit' && component)) && <label>Role<NativeSelect aria-label="Component role" value={role} onChange={e => setRole(e.target.value as ComponentType)}>{TYPES.map(t => <option key={t}>{t}</option>)}</NativeSelect></label>}
+        </div>
+        {editingController && controllerDraft && <div className="controller-edit-columns">{controllerDraft.sections.map(section => <section className="controller-edit-section" key={section.kind} aria-label={section.kind === 'process_model' ? 'Process model' : 'Control algorithm'}>
           <header><div><h3>{section.kind === 'process_model' ? 'Process model' : 'Control algorithm'}</h3><code className="control-reference">{section.id ?? 'No entries yet'}</code></div><Button type="button" variant="ghost" onClick={() => addControllerItem(section.kind)}><Plus aria-hidden="true" />{section.kind === 'process_model' ? 'Add entry' : 'Add rule'}</Button></header>
           <div className="controller-edit-rows">{section.items.length === 0 && <p className="controller-edit-empty">{section.kind === 'process_model' ? 'No entries yet.' : 'No rules yet.'}</p>}{section.items.map(item => <div className="controller-edit-row" key={item.id} data-edit-item-id={item.id}>
             <code className="controller-item-id">{item.id}</code>
-            {editingItem?.id === item.id ? <Textarea autoFocus id={`controller-edit-${item.id}`} aria-label={`${section.kind === 'process_model' ? 'Process model entry' : 'Algorithm rule'} ${item.id}`} value={item.text} placeholder="Enter text…" onChange={event => updateControllerItem(section.kind, item.id, event.target.value)} onBlur={() => setEditingItem(null)} onKeyDown={event => {
+            {editingItem?.id === item.id ? <Textarea autoFocus id={`controller-edit-${item.id}`} aria-label={`${section.kind === 'process_model' ? 'Process model entry' : 'Algorithm rule'} ${item.id}`} value={item.text} placeholder="Enter text…" onChange={event => updateControllerItem(section.kind, item.id, event.target.value)} onBlur={() => setEditingItem(current => current?.id === item.id ? null : current)} onKeyDown={event => {
               if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); updateControllerItem(section.kind, item.id, editingItem.original); setEditingItem(null); }
               else if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); setEditingItem(null); }
-            }} /> : <button className="controller-item-text" type="button" aria-label={`Edit ${item.id}`} onClick={() => setEditingItem({ id: item.id, original: item.text })}>{item.text || 'Enter text…'}</button>}
-            <EditorIconButton className="controller-item-remove" label={`Remove ${item.id}`} onClick={() => setControllerDraft(draft => draft && ({ ...draft, sections: draft.sections.map(s => s.kind === section.kind ? { ...s, items: s.items.filter(i => i.id !== item.id) } : s) }))}><Trash2 aria-hidden="true" /></EditorIconButton>
+            }} /> : <button className="controller-item-text" type="button" aria-label={`Edit ${item.id}`} onMouseDown={event => { /* Keep the active row from collapsing before the click reaches this row. */ event.preventDefault(); }} onClick={() => setEditingItem({ id: item.id, original: item.text })}>{item.text || 'Enter text…'}</button>}
+            <EditorIconButton className="controller-item-remove destructive-action" label={`Remove ${item.id}`} onClick={() => setItemToRemove({ kind: section.kind, id: item.id, text: item.text })}><Trash2 aria-hidden="true" /></EditorIconButton>
           </div>)}</div>
-        </section>)}</div> : action !== 'delete' && <label>{action === 'connection' || (action === 'rename' && connection) ? 'Label' : 'Name'}<Input aria-label={action === 'connection' || (action === 'rename' && connection) ? 'Connection label' : 'Component name'} autoFocus value={name} onChange={e => setName(e.target.value)} /></label>}
-        {action === 'component' && <label>Role<NativeSelect aria-label="Component role" value={role} onChange={e => setRole(e.target.value as ComponentType)}>{TYPES.map(t => <option key={t}>{t}</option>)}</NativeSelect></label>}
+        </section>)}</div>}
         {error && <p role="alert">{error}</p>}
-        <DialogFooter className={action === 'detail' ? 'controller-edit-footer' : undefined}><Button type="button" variant="ghost" onClick={() => setAction(null)}>Cancel</Button><Button type="submit">{action === 'delete' ? 'Delete' : 'Apply'}</Button></DialogFooter>
+        <DialogFooter className={editingController ? 'controller-edit-footer' : undefined}>{action === 'edit' && <><span className="control-copy-status" role="status">{copyMessage}</span><EditorIconButton label="Copy details" hint={copyMessage === 'Copied' ? 'Copied' : 'Copy details'} onClick={copyDetails}>{copyMessage === 'Copied' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}</EditorIconButton></>}<Button type="button" variant="ghost" onClick={() => setAction(null)}>Cancel</Button><Button type="submit" variant={action === 'delete' ? 'destructive' : 'default'}>{action === 'delete' ? 'Delete' : 'Apply'}</Button></DialogFooter>
       </form>
     </DialogContent></Dialog>
-    <Dialog open={help} onOpenChange={setHelp}><DialogContent><DialogTitle>M45 control structure syntax</DialogTitle><DialogDescription>Use the same simple text as the M45 editor. A component name refers to the same component throughout the document.</DialogDescription><pre className="control-help">{CONTROL_EXAMPLE}</pre><p>Roles: controller, process, sensor, actuator. Arrows default to control; add [feedback], [information], or [effect]. Use “Sensor measures Process” for observations. Quote names or labels containing reserved punctuation. Indent controller details with two spaces. Use # headings to organize the source.</p><p>Visual shows the diagram; Source shows the simple M45 text. Click a box or arrow to select it. Details appear only for the selection; click a detail heading or item to edit its source. Each belief and decision rule has a persistent reference ID. IDs appear beside the items and in the source margin; select and copy them when discussing a controller. Drag boxes to arrange them, drag the background to pan, and scroll to zoom. Layout is saved with the file. Auto-arrange resets manual positions. Select a box or arrow to rename or delete it. Undo also restores deleted items and layout changes.</p></DialogContent></Dialog>
+    <Dialog open={!!itemToRemove} onOpenChange={open => { if (!open) setItemToRemove(null); }}><DialogContent>
+      <DialogTitle>{itemToRemove?.kind === 'process_model' ? 'Delete process-model entry?' : 'Delete algorithm rule?'}</DialogTitle>
+      <DialogDescription>Remove {itemToRemove?.text ? `“${itemToRemove.text}”` : 'this empty entry'}? The removal takes effect when you apply the component changes.</DialogDescription>
+      <DialogFooter><Button variant="ghost" autoFocus onClick={() => setItemToRemove(null)}>Cancel</Button><Button variant="destructive" onClick={() => {
+        if (!itemToRemove) return;
+        setControllerDraft(draft => draft && ({ ...draft, sections: draft.sections.map(section => section.kind === itemToRemove.kind ? { ...section, items: section.items.filter(item => item.id !== itemToRemove.id) } : section) }));
+        if (editingItem?.id === itemToRemove.id) setEditingItem(null);
+        setItemToRemove(null);
+      }}>Delete</Button></DialogFooter>
+    </DialogContent></Dialog>
+    <Dialog open={confirmRoleChange} onOpenChange={setConfirmRoleChange}><DialogContent><DialogTitle>Change component type?</DialogTitle><DialogDescription>Changing this controller to a {role} will remove its process model and control algorithm. Continue? You can undo this change.</DialogDescription><DialogFooter><Button variant="ghost" autoFocus onClick={() => setConfirmRoleChange(false)}>Cancel</Button><Button variant="destructive" onClick={() => apply(true)}>Change type</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={help} onOpenChange={setHelp}><DialogContent><DialogTitle>M45 control structure syntax</DialogTitle><DialogDescription>Use the same simple text as the M45 editor. A component name refers to the same component throughout the document.</DialogDescription><pre className="control-help">{CONTROL_EXAMPLE}</pre><p>Roles: controller, process, sensor, actuator. Arrows default to control; add [feedback], [information], or [effect]. Use “Sensor measures Process” for observations. Quote names or labels containing reserved punctuation. Indent controller details with two spaces. Use # headings to organize the source.</p><p>Visual shows the diagram; Source shows the simple M45 text. Click a box or arrow, or activate it with Enter or Space, to open its menu. Show details opens the item’s properties and controller details together; fields can be edited in the same dialog. Controller dialogs can be resized. Each belief and decision rule has a persistent reference ID. IDs appear beside the items and in the source margin; select and copy them when discussing a controller. Drag boxes to arrange them, drag the background to pan, and scroll to zoom. Layout is saved with the file. Auto-arrange resets manual positions. Use the selected item’s Show details action to make changes, or the toolbar to delete it. Undo also restores deleted items and layout changes.</p></DialogContent></Dialog>
   </div>;
   return <Dialog open={expanded} onOpenChange={setExpanded}>
     {expanded ? <DialogContent className="diagram-dialog control-editor-dialog" aria-describedby={undefined}

@@ -1,7 +1,7 @@
 // Ported from M45 control-structure authoring; keep grammar behavior compatible.
 import { compileAuthoringSource } from "./resolve.ts"
 import { mentionsIn, quoteName } from "./syntax.ts"
-import { TYPES, RELATIONSHIPS, type AuthoringResult, type ComponentType, type TextEdit } from "./schema.ts"
+import { TYPES, RELATIONSHIPS, type AuthoringResult, type ComponentType, type RelationshipType, type TextEdit } from "./schema.ts"
 
 function editable(result: AuthoringResult) {
   if (!result.valid) throw new Error("Finish correcting the text before changing the diagram.")
@@ -59,6 +59,67 @@ export function renameVisualConnection(result: AuthoringResult, connectionId: st
   const original = result.source.slice(token.from, token.to)
   return finish(result, [{ from: token.from + original.length - original.trimStart().length,
     to: token.to - (original.length - original.trimEnd().length), insert: written(value(label, "connection label")) }])
+}
+
+export function editVisualComponent(result: AuthoringResult, componentId: string, input: { name: string; type: ComponentType; removeDetails?: boolean }) {
+  editable(result)
+  const component = result.graph.components.find(c => c.id === componentId)
+  if (!component) throw new Error("Select a component to edit it.")
+  const name = value(input.name, "component name")
+  if (!TYPES.includes(input.type)) throw new Error("Choose a component role.")
+  if (result.graph.components.some(c => c.id !== componentId && c.name === name)) throw new Error("That component name is already in use.")
+  if (name === component.name && input.type === component.type) return { edits: [], result }
+  const removed = result.nodes.filter(node => node.kind !== "connection" && node.kind !== "declaration" && node.owner.name === component.name && input.type !== "controller")
+  if (removed.some(node => node.kind !== "connection" && node.kind !== "declaration" && node.body) && !input.removeDetails) {
+    throw new Error("Confirm removal of the process model and control algorithm before changing the role.")
+  }
+  const edits: TextEdit[] = removed.map(node => {
+    const end = result.source.indexOf("\n", node.to)
+    return { from: node.from, to: end < 0 ? result.source.length : end + 1, insert: "" }
+  })
+  const mentions = result.nodes.filter(node => !removed.includes(node)).flatMap(mentionsIn).filter(m => m.name === component.name)
+  let hasType = false
+  for (const mention of mentions) {
+    if (name !== component.name) edits.push({ from: mention.from, to: mention.to, insert: written(name) })
+    const token = result.tokens.find(t => t.kind === "type" && t.from >= mention.to && !result.source.slice(mention.to, t.from).trim())
+    if (token) {
+      hasType = true
+      if (component.type !== input.type) edits.push({ from: token.from, to: token.to, insert: `(${input.type})` })
+    }
+  }
+  if (!hasType) {
+    if (mentions.length) edits.push({ from: mentions[0].to, to: mentions[0].to, insert: ` (${input.type})` })
+    else {
+      const newline = result.source.includes("\r\n") ? "\r\n" : "\n"
+      edits.push({ from: result.source.length, to: result.source.length, insert: `${result.source.endsWith("\n") ? "" : newline}${written(name)} (${input.type})${newline}` })
+    }
+  }
+  const identity = { ...result.identity, entries: result.identity.entries.map(entry => entry.kind === "component" && entry.id === componentId ? { ...entry, key: name } : entry) }
+  return finish({ ...result, identity }, edits)
+}
+
+export function editVisualConnection(result: AuthoringResult, connectionId: string, input: { sourceId: string; targetId: string; label: string; relationship: RelationshipType }) {
+  editable(result)
+  const connection = result.graph.connections.find(c => c.id === connectionId)
+  const source = result.graph.components.find(c => c.id === input.sourceId)
+  const target = result.graph.components.find(c => c.id === input.targetId)
+  if (!connection || !source || !target) throw new Error("Choose both components for the connection.")
+  if (source.id === target.id) throw new Error("Choose two different components.")
+  if (input.relationship !== "observation" && !RELATIONSHIPS.includes(input.relationship)) throw new Error("Choose a connection kind.")
+  if (input.relationship === "observation" && (source.type !== "sensor" || target.type !== "process")) throw new Error("An observation must connect a sensor to a process.")
+  const label = input.relationship === "observation" ? "Observes" : value(input.label, "connection label")
+  if (connection.sourceId === source.id && connection.targetId === target.id && connection.label === label && connection.relationship === input.relationship) return { edits: [], result }
+  const endpoint = (component: typeof source) => `${written(component.name)}${component.type ? ` (${component.type})` : ""}`
+  const text = input.relationship === "observation" ? `${endpoint(source)} measures ${endpoint(target)}`
+    : `${endpoint(source)} -> ${endpoint(target)}: ${written(label)}${input.relationship === "control" ? "" : ` [${input.relationship}]`}`
+  // Retargeting must not delete an old endpoint whose only mention was this arrow.
+  const remaining = result.nodes.filter(node => node.from !== connection.from).flatMap(mentionsIn)
+  const declarations = result.graph.components.filter(c => [connection.sourceId, connection.targetId].includes(c.id) && ![source.id, target.id].includes(c.id))
+    .filter(c => !remaining.some(m => m.name === c.name && (!c.type || m.type === c.type))).map(endpoint)
+  const newline = result.source.includes("\r\n") ? "\r\n" : "\n"
+  const key = `${JSON.stringify([source.id, target.id, input.relationship])}:${label}`
+  const identity = { ...result.identity, entries: result.identity.entries.map(entry => entry.kind === "connection" && entry.id === connectionId ? { ...entry, key } : entry) }
+  return finish({ ...result, identity }, [{ from: connection.from, to: connection.to, insert: [...declarations, text].join(newline) }])
 }
 
 export function editVisualDetail(result: AuthoringResult, detailId: string, body: string) {

@@ -1,6 +1,7 @@
 const diagramTheme = { theme: 'base', look: 'classic' } as const;
 
-export async function renderDiagram(source: string, id: string, fontFamily: string) {
+export async function renderDiagram(source: string, id: string, fontFamily: string, appearance: 'default' | 'block' = 'default') {
+  const block = appearance === 'block';
   const { default: mermaid } = await import('mermaid');
   await document.fonts.ready;
   mermaid.initialize({
@@ -8,7 +9,7 @@ export async function renderDiagram(source: string, id: string, fontFamily: stri
     ...diagramTheme, fontFamily,
     htmlLabels: true,
     // These diagram types have theme defaults independent of Mermaid's global theme.
-    flowchart: { ...diagramTheme, curve: 'rounded', diagramPadding: 16, padding: 24, nodeSpacing: 40, rankSpacing: 48 },
+    flowchart: { ...diagramTheme, curve: block ? 'step' : 'rounded', diagramPadding: 16, padding: 24, nodeSpacing: 40, rankSpacing: block ? 64 : 48 },
     agentflow: diagramTheme, swimlane: diagramTheme, sequence: diagramTheme,
     class: diagramTheme, state: diagramTheme, er: diagramTheme, requirement: diagramTheme,
     usecase: diagramTheme, venn: diagramTheme,
@@ -32,6 +33,16 @@ export async function renderDiagram(source: string, id: string, fontFamily: stri
       .edgeLabel .labelBkg { background: #fff; border: 1px solid #dedede; border-radius: 999px; padding: 3px 12px; }
       .edgeLabel rect { rx: 14px; ry: 14px; opacity: 1; stroke: #dedede !important; stroke-width: 1px; }
       marker[id$="-pointEnd"] path, marker[id$="-pointStart"] path { fill: none !important; stroke: #909090 !important; stroke-width: 1.2px !important; }
+      ${block ? `
+      .node rect { rx: 0; ry: 0; }
+      .control-node-label { min-width: 152px; text-align: center; }
+      .control-node-role { border: 0; padding: 0; font-size: 10px; }
+      .control-node-name { margin-top: 6px; }
+      .flowchart-link { stroke-width: 1.5px; }
+      .edgeLabel .labelBkg { border: 0; border-radius: 0; padding: 2px 4px; }
+      .edgeLabel rect { rx: 0; ry: 0; stroke: none !important; }
+      marker[id$="-pointEnd"] path, marker[id$="-pointStart"] path { fill: #555 !important; stroke: #555 !important; }
+      ` : ''}
     `,
   });
   // Mermaid removes existing DOM elements with the render ID. Keep the visible SVG intact.
@@ -39,9 +50,16 @@ export async function renderDiagram(source: string, id: string, fontFamily: stri
   const diagram = new DOMParser().parseFromString(result.svg, 'text/html');
   const svg = diagram.querySelector('svg');
   if (!svg) throw new Error('The diagram renderer did not return an SVG.');
+  if (block) {
+    // ELK rounds its orthogonal routes regardless of flowchart.curve. Its quadratic
+    // control point is the original corner; restore that corner without moving the route.
+    for (const path of diagram.querySelectorAll('path.flowchart-link')) {
+      path.setAttribute('d', path.getAttribute('d')!.replace(/Q([-\d.e+,]+)\s+([-\d.e+,]+)/g, 'L$1L$2'));
+    }
+  }
   // Keep arrowhead geometry self-contained in both editor and print SVGs.
-  for (const path of diagram.querySelectorAll('marker[id$="-pointEnd"] path')) path.setAttribute('d', 'M 1 1 L 9 5 L 1 9');
-  for (const path of diagram.querySelectorAll('marker[id$="-pointStart"] path')) path.setAttribute('d', 'M 9 1 L 1 5 L 9 9');
+  for (const path of diagram.querySelectorAll('marker[id$="-pointEnd"] path')) path.setAttribute('d', `M 1 1 L 9 5 L 1 9${block ? ' Z' : ''}`);
+  for (const path of diagram.querySelectorAll('marker[id$="-pointStart"] path')) path.setAttribute('d', `M 9 1 L 1 5 L 9 9${block ? ' Z' : ''}`);
   for (const label of diagram.querySelectorAll('g.edgeLabel rect.background')) {
     label.setAttribute('x', String(Number(label.getAttribute('x')) - 10));
     label.setAttribute('width', String(Number(label.getAttribute('width')) + 20));

@@ -440,3 +440,81 @@ test('controller row editor creates missing sections and validates entries atomi
   assert.throws(() => applyControllerDraft(initial, initial.graph.components[0].id, draft), /Enter a rule/);
   assert.equal(initial.graph.details.length, 0);
 });
+
+test('component edits preserve identity and prose and require confirmation before removing controller details', async () => {
+  const { compileAuthoringSource } = await import('../src/lib/control-structure/resolve.ts');
+  const { editVisualComponent } = await import('../src/lib/control-structure/visual-edits.ts');
+  for (const newline of ['\n', '\r\n']) {
+    const source = ['# Preserve this', 'Pilot (controller) -> Plant (process): Move', 'Pilot (controller)', 'Pilot process model:', '  Pilot knows position.', 'Pilot control algorithm:', '  Stop if needed.', '# Keep this too'].join(newline);
+    const original = compileAuthoringSource(source);
+    const id = original.graph.components[0].id;
+    const renamed = editVisualComponent(original, id, { name: 'Crew: A', type: 'controller' }).result;
+    assert.equal(renamed.graph.components[0].id, id);
+    assert.equal(renamed.graph.connections[0].id, original.graph.connections[0].id);
+    assert.deepEqual(renamed.graph.details.map(d => d.id), original.graph.details.map(d => d.id));
+    assert.ok(renamed.source.includes('  Pilot knows position.'));
+    assert.throws(() => editVisualComponent(renamed, id, { name: 'Crew: A', type: 'process' }), /Confirm removal/);
+    const changed = editVisualComponent(renamed, id, { name: 'Crew: A', type: 'process', removeDetails: true }).result;
+    assert.equal(changed.valid, true);
+    assert.equal(changed.graph.components[0].id, id);
+    assert.equal(changed.graph.components[0].type, 'process');
+    assert.equal(changed.graph.details.length, 0);
+    assert.ok(changed.source.includes('# Keep this too'));
+    assert.ok(!changed.source.includes('(controller)'));
+    assert.equal(changed.identity.entries.some(e => e.kind === 'rule' || e.kind === 'variable'), false);
+  }
+});
+
+test('role edits handle unclassified and detail-only components without losing their identity', async () => {
+  const { compileAuthoringSource } = await import('../src/lib/control-structure/resolve.ts');
+  const { editVisualComponent } = await import('../src/lib/control-structure/visual-edits.ts');
+  for (const source of ['Pilot', 'Pilot process model:\n  Position\n']) {
+    const original = compileAuthoringSource(source);
+    const id = original.graph.components[0].id;
+    const changed = editVisualComponent(original, id, { name: 'Crew', type: 'process', removeDetails: true }).result;
+    assert.equal(changed.valid, true);
+    assert.deepEqual(changed.graph.components.map(c => [c.id, c.name, c.type]), [[id, 'Crew', 'process']]);
+  }
+});
+
+test('connection edits preserve IDs across labels, kinds and endpoints and retain old endpoint declarations', async () => {
+  const { compileAuthoringSource } = await import('../src/lib/control-structure/resolve.ts');
+  const { editVisualConnection } = await import('../src/lib/control-structure/visual-edits.ts');
+  const original = compileAuthoringSource('Pilot (controller) -> Plant (process): Move\nObserver (controller)\n# Keep\n');
+  const [pilot, plant, observer] = original.graph.components;
+  const edge = original.graph.connections[0];
+  const changed = editVisualConnection(original, edge.id, { sourceId: plant.id, targetId: observer.id, label: 'State: ready', relationship: 'feedback' }).result;
+  assert.equal(changed.valid, true);
+  assert.equal(changed.graph.connections[0].id, edge.id);
+  assert.equal(changed.graph.connections[0].signalId, edge.signalId);
+  assert.equal(changed.graph.connections[0].label, 'State: ready');
+  assert.equal(changed.graph.connections[0].relationship, 'feedback');
+  assert.equal(changed.graph.components.find(c => c.id === pilot.id).type, 'controller');
+  assert.ok(changed.source.includes('# Keep'));
+  assert.throws(() => editVisualConnection(original, edge.id, { sourceId: pilot.id, targetId: pilot.id, label: 'X', relationship: 'control' }), /different/);
+});
+
+test('observations can change kind without losing identity or accepting invalid endpoint roles', async () => {
+  const { compileAuthoringSource } = await import('../src/lib/control-structure/resolve.ts');
+  const { editVisualConnection } = await import('../src/lib/control-structure/visual-edits.ts');
+  const original = compileAuthoringSource('Sensor measures Plant\n');
+  const edge = original.graph.connections[0];
+  const changed = editVisualConnection(original, edge.id, { sourceId: edge.sourceId, targetId: edge.targetId, label: 'Reading', relationship: 'information' }).result;
+  assert.equal(changed.graph.connections[0].id, edge.id);
+  assert.equal(changed.graph.components[0].type, 'sensor');
+  assert.equal(changed.graph.components[1].type, 'process');
+  const restored = editVisualConnection(changed, edge.id, { sourceId: edge.sourceId, targetId: edge.targetId, label: '', relationship: 'observation' }).result;
+  assert.equal(restored.graph.connections[0].id, edge.id);
+  assert.equal(restored.graph.connections[0].label, 'Observes');
+  assert.throws(() => editVisualConnection(original, edge.id, { sourceId: edge.targetId, targetId: edge.sourceId, label: '', relationship: 'observation' }), /sensor to a process/);
+});
+
+test('applying unchanged properties leaves implicit observation roles and source bytes untouched', async () => {
+  const { compileAuthoringSource } = await import('../src/lib/control-structure/resolve.ts');
+  const { editVisualComponent, editVisualConnection } = await import('../src/lib/control-structure/visual-edits.ts');
+  const original = compileAuthoringSource('Sensor measures Plant\r\n');
+  const sensor = original.graph.components[0];
+  assert.equal(editVisualComponent(original, sensor.id, { name: sensor.name, type: sensor.type }).result.source, original.source);
+  const edge = original.graph.connections[0];
+  assert.equal(editVisualConnection(original, edge.id, { sourceId: edge.sourceId, targetId: edge.targetId, label: edge.label, relationship: edge.relationship }).result.source, original.source);
+});
