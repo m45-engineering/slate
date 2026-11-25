@@ -8,7 +8,7 @@ import type { ControlLayout } from '@/lib/control-structure/layout';
 import { DiagramViewer } from './diagram-viewer';
 
 export function ControlStructurePreview({ source, result: supplied, readOnly = false, selectedId, onSelect, positions, onMove, expandable = true, fill = false }: {
-  expandable?: boolean; positions?: ControlLayout; onMove?(positions: ControlLayout): void; source: string; result?: AuthoringResult; readOnly?: boolean; fill?: boolean; selectedId?: string; onSelect?(id: string): void;
+  expandable?: boolean; positions?: ControlLayout; onMove?(positions: ControlLayout): void; source: string; result?: AuthoringResult; readOnly?: boolean; fill?: boolean; selectedId?: string; onSelect?(id: string, anchor?: { x: number; y: number }): void;
 }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, '');
   const sequence = useRef(0);
@@ -24,7 +24,7 @@ export function ControlStructurePreview({ source, result: supplied, readOnly = f
         if (!result.graph.components.length) { if (!canceled) { setView({ svg: '', source }); setError(''); } return; }
         const { renderDiagram } = await import('@/lib/render-diagram');
         await document.fonts.ready;
-        let svg = await renderDiagram(controlStructureDiagram(result), `control${id}-${++sequence.current}`, getComputedStyle(document.body).fontFamily);
+        let svg = await renderDiagram(controlStructureDiagram(result), `control${id}-${++sequence.current}`, getComputedStyle(document.body).fontFamily, 'block');
         if (onSelect && !readOnly) {
           const document = new DOMParser().parseFromString(svg, 'text/html');
           const mark = (element: Element, id: string, label?: string) => {
@@ -40,7 +40,7 @@ export function ControlStructurePreview({ source, result: supplied, readOnly = f
             const component = index === undefined ? undefined : result.graph.components[Number(index)];
             if (component) {
               node.classList.add('control-component');
-              // Thicken the existing rounded border for selection without changing its role color.
+              // Thicken the existing block border for selection without changing its role color.
               node.querySelector<SVGRectElement>(':scope > rect')?.style.setProperty('stroke-width', 'var(--control-border-width, 2px)', 'important');
               mark(node, component.id, `Select component ${component.name}`);
             }
@@ -81,7 +81,15 @@ export function ControlStructurePreview({ source, result: supplied, readOnly = f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, valid, id]);
 
-  const select = (target: Element) => onSelect?.(target.closest('[data-diagram-id]')?.getAttribute('data-diagram-id') ?? '');
+  const select = (target: Element, point?: { x: number; y: number }) => {
+    const element = target.closest('[data-diagram-id]');
+    const rect = element?.getBoundingClientRect();
+    const viewport = target.closest('.diagram-viewport')?.getBoundingClientRect();
+    onSelect?.(element?.getAttribute('data-diagram-id') ?? '', point ?? (rect && {
+      x: Math.max(viewport?.left ?? 0, Math.min(rect.x + rect.width / 2, viewport?.right ?? window.innerWidth)),
+      y: Math.max(viewport?.top ?? 0, Math.min(rect.bottom, viewport?.bottom ?? window.innerHeight)),
+    }));
+  };
   return <div className="control-preview" onKeyDown={event => {
     const target = (event.target as Element).closest('[data-diagram-id]');
     if (target && (event.key === 'Enter' || event.key === ' ')) {

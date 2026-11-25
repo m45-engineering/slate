@@ -12,7 +12,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-0.1.11-mac-arm64.dmg` from the [v0.1.11 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.11). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-0.1.12-mac-arm64.dmg` from the [v0.1.12 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.12). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -22,13 +22,13 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-0.1.11-win-x64.exe` from the [v0.1.11 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.11) for a standard Intel/AMD PC.
+1. Download `Slate-0.1.12-win-x64.exe` from the [v0.1.12 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.12) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Download both installers from the [v0.1.11 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.11). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
+Download both installers from the [v0.1.12 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.12). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
 
 ## Features
 
@@ -48,7 +48,7 @@ Download both installers from the [v0.1.11 release](https://github.com/m45-engin
 - Independent windows through **File → New Window** (⌘⇧N / Ctrl+Shift+N), each with its own folder, document tabs, unsaved drafts, and save prompts.
 - Reopens saved workspaces and their file tabs in their previous order on restart, reading each file's latest contents from disk. Recovery drafts stay separate between windows.
 - Opens centered at 96% of the current display's available width and height, leaving the menu bar and Dock or taskbar clear.
-- A single compact toolbar, high-contrast monochrome controls, and a blank document at startup.
+- A single compact toolbar, high-contrast controls with red destructive actions, and a blank document at startup.
 - A wider visual document area and document zoom from 75% to 200%, without scaling the application controls.
 - Headings, bold, italic, strikethrough, links, lists, checkboxes, and quotes.
 - Editable Markdown tables and fenced code blocks with syntax highlighting in Visual view and PDF exports. Highlighting uses the fence language (for example, `typescript` or `ts`) and updates as you edit; plain text and unsupported languages stay uncolored. Mermaid diagrams use a rounded, shadow-free neutral style. Scroll over a diagram to zoom, drag to move it, and choose **Fit** to reset the view. Choose **Expand** for a nearly full-window canvas that resizes with the app; press Escape or **Close** to return to the same inline view. Add or edit their fenced source in Markdown view.
@@ -90,11 +90,13 @@ Pilot control algorithm:
 
 Roles are `controller`, `process`, `sensor`, and `actuator`. Connections default to control; other suffixes are `[feedback]`, `[information]`, and `[effect]`. Use `Sensor measures Process` for an observation. Quote names or labels containing reserved punctuation, and indent controller details consistently. **Syntax help** includes an example.
 
-Boxes show the role in a small uppercase badge above the component name. Selecting a box thickens its existing border without changing its role color. Click a diagram box to inspect its controller details. Switch to Source to edit the simple text; a controller-detail heading jumps to its source. Click a box or arrow directly to select it for renaming or deletion; its details appear only while selected. Click empty canvas space or press Escape to clear the selection. Add components or connections from the toolbar. Drag boxes to arrange them; arrows follow their endpoints. Drag the background to pan or scroll to zoom. Expand opens the entire control-structure editor with its editing toolbar, Visual/Source switch, and Save; collapse returns to the document without losing edits. **Auto-arrange** restores the automatic layout. Component deletion confirms removal of its incident connections and controller details; Undo restores deletions and layout changes. Save persists box positions in the M45 document’s `views` field. Individual connector routing remains automatic.
+Control structures use square blocks with a small uppercase role above each component name and orthogonal connectors. Selecting a block thickens its existing border without changing its role color; selecting a connector highlights its label. Click a block or connector, or activate it with Enter or Space, to open the compact **Show details** menu. The dialog lets you inspect and edit component names and roles, or connection labels, kinds, and endpoints. Controller details appear in the same resizable dialog. Changing a controller into another role warns before removing its process model and algorithm.
 
-Drag the inspection pane's top edge to resize it. **Edit controller details** opens both the process model and control algorithm together: click an item to edit its text while its ID stays visible. **Add entry** and **Add rule** generate IDs automatically; removing a row retires its ID when you apply the changes. Apply updates both sections together, and Cancel leaves the document unchanged. Older documents acquire missing rule IDs when saved.
+Click a process-model entry or algorithm rule to edit its text while its ID stays visible. **Add entry** and **Add rule** generate IDs automatically. Red trash buttons ask for confirmation before removing a row; its ID is retired when you apply the changes. Apply updates both sections together, and Cancel leaves the document unchanged. Older documents acquire missing rule IDs when saved. The dialog's copy button copies its details and reference IDs.
 
-The inspection pane's copy button copies the selected item's details with their IDs. **Copy diagram as image** copies the full diagram as a high-resolution PNG with a white background, regardless of the current zoom and pan. Selecting items, resizing inspection, and applying edits preserve the viewport; **Fit diagram** resets it explicitly. Reference IDs also appear beside controller blocks and their entries in the Source margin.
+Add components or connections from the toolbar. Drag blocks to arrange them; arrows follow their endpoints. Drag the background to pan or scroll to zoom. Expand opens the entire control-structure editor with its editing toolbar, Visual/Source switch, and Save; collapse returns to the document without losing edits. **Auto-arrange** restores the automatic layout. The toolbar's red Delete button asks for confirmation; deleting a component also removes its incident connections and controller details. Undo restores deletions, applied edits, and layout changes. Save persists block positions in the M45 document's `views` field. Individual connector routing remains automatic.
+
+**Copy diagram as image** copies the full diagram as a high-resolution PNG with a white background, regardless of the current zoom and pan. Selecting items and applying edits preserve the viewport; **Fit diagram** resets it explicitly. Reference IDs also appear beside controller blocks and their entries in the Source margin.
 
 Markdown documents can embed the same text inside a `control-structure` fenced block. Visual view and PDF exports render the diagram; edit its text in Markdown view. Files whose graph disagrees with their stored source, unsupported grammar versions, and files without M45 authored text stay in Source view with an explanation.
 

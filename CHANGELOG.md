@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.12 - 2026-11-25
+
+- Render control structures as block diagrams with square components, orthogonal connectors, and cleaner labels that do not overlap selection borders.
+- Open a compact Show details menu from a component or connection. Inspect and edit names, component roles, connection kinds, and endpoints in one dialog; resize controller dialogs to view process models and algorithms.
+- Confirm component, connection, process-model entry, and algorithm-rule deletion. Warn before changing a controller role removes its details, with Undo available after applying changes.
+- Use red trash icons and destructive confirmation buttons, vertically centered entry text, and softer focus outlines. Remove the separate toolbar pencil and bottom inspection pane.
+
 ## 0.1.11 - 2026-11-24
 
 - Open M45 control structures with individually identified algorithm rules. Preserve controller, entry, and rule IDs through edits, save/reopen, and M45 round trips; upgrade older documents on save without dropping unrelated metadata.

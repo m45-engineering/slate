@@ -11,7 +11,7 @@ type NodeEditing = { positions?: ControlLayout; onMove?(positions: ControlLayout
 type Layout = { width: number; height: number; viewportWidth: number; viewportHeight: number; fit: number };
 type View = { scale: number; x: number; y: number };
 
-export function DiagramViewer({ svg, title = 'Mermaid diagram', selectedId, onCanvasClick, positions, onMove, fill = false, expandable = true, preserveViewport = false }: NodeEditing & { expandable?: boolean; preserveViewport?: boolean; svg: string; title?: string; fill?: boolean; selectedId?: string; onCanvasClick?(target: Element): void }) {
+export function DiagramViewer({ svg, title = 'Mermaid diagram', selectedId, onCanvasClick, positions, onMove, fill = false, expandable = true, preserveViewport = false }: NodeEditing & { expandable?: boolean; preserveViewport?: boolean; svg: string; title?: string; fill?: boolean; selectedId?: string; onCanvasClick?(target: Element, point?: { x: number; y: number }): void }) {
   const [expanded, setExpanded] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
 
@@ -33,7 +33,7 @@ export function DiagramViewer({ svg, title = 'Mermaid diagram', selectedId, onCa
 }
 
 function DiagramCanvas({ svg, expanded = false, suspended = false, action, title, selectedId, onCanvasClick, positions, onMove, fill = false, preserveViewport = false }: NodeEditing & {
-  preserveViewport?: boolean; fill?: boolean; selectedId?: string; onCanvasClick?(target: Element): void; title: string; svg: string; expanded?: boolean; suspended?: boolean; action?: React.ReactNode;
+  preserveViewport?: boolean; fill?: boolean; selectedId?: string; onCanvasClick?(target: Element, point?: { x: number; y: number }): void; title: string; svg: string; expanded?: boolean; suspended?: boolean; action?: React.ReactNode;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
@@ -175,7 +175,7 @@ function DiagramCanvas({ svg, expanded = false, suspended = false, action, title
         } else if (move) geometry.current?.draw(positions ?? {});
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
         drag.current = null; setPanning(false);
-        if (gesture && !gesture.moved) onCanvasClick?.(gesture.target);
+        if (gesture && !gesture.moved) onCanvasClick?.(gesture.target, { x: event.clientX, y: event.clientY });
       }}
       onLostPointerCapture={() => { if (moving.current) geometry.current?.draw(positions ?? {}); moving.current = null; drag.current = null; setPanning(false); }}
       onKeyDown={event => {
