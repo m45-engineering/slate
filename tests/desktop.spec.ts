@@ -1283,6 +1283,7 @@ test('angle-wrapped report links survive visual editing, saving, and reopening',
   await page.keyboard.type(' updated');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(page.getByRole('tab', { name: 'report.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   expect(await readFile(target, 'utf8')).toContain('Research report updated');
   await restart();
   editor = page.getByRole('textbox', { name: 'Document editor', exact: true });
@@ -2973,6 +2974,7 @@ test('identified controller entries and rules show persistent IDs in details and
   const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
   const target = path.join(directory, 'identified-vigil.yaml');
   await writeFile(target, content);
+  await delayDocumentWrite(target);
   await page.evaluate(() => window.slate!.openFile('identified-vigil.yaml'));
   await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
   await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
@@ -2995,12 +2997,13 @@ test('identified controller entries and rules show persistent IDs in details and
   const updated = source.replace('Preserve source measurement times.', 'Preserve original measurement times.');
   await input.fill(updated);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  // Save is also disabled during a write. Wait for the tab's unsaved marker to clear.
+  await expect(page.getByRole('tab', { name: 'identified-vigil.yaml', exact: true })).toHaveAttribute('aria-selected', 'true');
   const reordered = updated.replace(`  ${algorithm.rules[0].text}\n  ${algorithm.rules[1].text.replace('Preserve source measurement times.', 'Preserve original measurement times.')}`, `  ${algorithm.rules[1].text.replace('Preserve source measurement times.', 'Preserve original measurement times.')}\n  ${algorithm.rules[0].text}`);
   expect(reordered).not.toBe(updated);
   await input.fill(reordered);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(page.getByRole('tab', { name: 'identified-vigil.yaml', exact: true })).toHaveAttribute('aria-selected', 'true');
   await restart();
   details = page.getByRole('dialog', { name: 'Component details', exact: true });
   await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
