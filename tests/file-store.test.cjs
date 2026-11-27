@@ -160,6 +160,25 @@ test('source-only detection protects metadata, HTML, references, and images', as
   assert.equal(sourceOnlyReason('# Hello\n\n| A | B |\n| - | - |\n| 1 | 2 |'), null);
 });
 
+test('angle-wrapped Markdown links are not HTML, but real tags still require source mode', async () => {
+  const { sourceOnlyReason } = await import('../src/lib/document.ts');
+  for (const source of [
+    '[Paper](<https://example.com/paper>)',
+    '[Paper](<https://example.com/paper](https://example.com/paper)>)',
+    '<https://example.com> and <http://example.com>',
+    '<reader@example.com> and <mailto:reader@example.com>',
+    '[Local](<file:///tmp/report.md>) and [Section](<#report_section_1>)',
+    '| Source |\n| --- |\n| [Paper](<https://example.com/paper>) |',
+  ]) assert.equal(sourceOnlyReason(source), null, source);
+  for (const source of [
+    '<div>Text</div>', '<br/>', '<BR />', '</span>',
+    '<a id="section"></a>', '<custom-element data-value="1">Text</custom-element>',
+    '<div\nclass="note">Text</div>', '<!-- keep this -->',
+    '[Paper](<https://example.com>) <span>Text</span>',
+    '<https://example.com>\n\n<div>Text</div>',
+  ]) assert.equal(sourceOnlyReason(source), 'HTML', source);
+});
+
 test('inline code and prices do not trigger unsupported Markdown warnings', async () => {
   const { sourceOnlyReason } = await import('../src/lib/document.ts');
   for (const source of [

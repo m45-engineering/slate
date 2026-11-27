@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.13 - 2026-11-27
+
+- Open and edit Markdown reports with angle-bracketed link destinations and autolinks in Visual view. These links no longer trigger the embedded-HTML warning.
+- Preserve link destinations and tables through visual edits, saving, and reopening. Actual HTML tags and comments remain in Markdown mode to prevent content loss.
+
 ## 0.1.12 - 2026-11-25
 
 - Render control structures as block diagrams with square components, orthogonal connectors, and cleaner labels that do not overlap selection borders.

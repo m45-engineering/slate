@@ -1264,6 +1264,41 @@ test('PDF export reports unsupported Markdown and file write failures without lo
   expect(await readFile(file, 'utf8')).toBe(original);
 });
 
+test('angle-wrapped report links survive visual editing, saving, and reopening', async () => {
+  const report = '# Research report\n\n[Paper](<https://example.com/paper>)\n\n<https://example.com/autolink>\n\n| Source | Notes |\n| --- | --- |\n| [Citation](<https://example.com/citation](https://example.com/citation)>) | Evidence |\n';
+  const target = path.join(directory, 'report.md');
+  await writeFile(target, report);
+  await restart(target);
+  let editor = page.getByRole('textbox', { name: 'Document editor', exact: true });
+  await expect(editor).toBeVisible();
+  const hrefs = () => editor.locator('a').evaluateAll(links => links.map(link => link.getAttribute('href')));
+  const expected = ['https://example.com/paper', 'https://example.com/autolink', 'https://example.com/citation](https://example.com/citation)'];
+  expect(await hrefs()).toEqual(expected);
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(report);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await editor.locator('h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' updated');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  expect(await readFile(target, 'utf8')).toContain('Research report updated');
+  await restart();
+  editor = page.getByRole('textbox', { name: 'Document editor', exact: true });
+  await expect(page.getByRole('heading', { name: 'Research report updated', exact: true })).toBeVisible();
+  expect(await hrefs()).toEqual(expected);
+  await expect(editor.locator('td').filter({ hasText: 'Evidence' })).toHaveCount(1);
+
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  const html = report + '\n<a id="report_section_1"></a>\n';
+  await source.fill(html);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(source).toHaveValue(html);
+  await expect(page.getByRole('status').filter({ hasText: 'Keep this document in Markdown to preserve its HTML.' })).toBeVisible();
+});
+
 test('View menu switches modes without a custom shortcut and preserves source-only content', async () => {
   const accelerator = await application.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('toggle-editor-view')?.accelerator);
   expect(accelerator).toBeNull();
