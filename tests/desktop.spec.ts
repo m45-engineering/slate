@@ -535,17 +535,18 @@ test('Visual code blocks highlight fence languages and keep edits and undo as pl
     window.getSelection()!.removeAllRanges();
     window.getSelection()!.addRange(range);
   });
-  await page.keyboard.type(' // edited');
+  // Insert one edit so Undo doesn't depend on the timing between keystrokes.
+  await page.keyboard.insertText(' // edited');
   await expect(code.locator('.hljs-comment')).toHaveText('// edited');
   await page.keyboard.press('ControlOrMeta+z');
-  await expect(code).toHaveText('const value = 42;');
+  await expect(code).toHaveJSProperty('textContent', 'const value = 42;');
   await expect(code.locator('.hljs-comment')).toHaveCount(0);
   await page.keyboard.type(' // kept');
   await expect(code.locator('.hljs-comment')).toHaveText('// kept');
   const language = block.getByRole('textbox', { name: 'Code language' });
   await language.fill('unknown-language');
   await expect(code.locator('[class*="hljs-"]')).toHaveCount(0);
-  await expect(code).toHaveText('const value = 42; // kept');
+  await expect(code).toHaveJSProperty('textContent', 'const value = 42; // kept');
   await language.fill('ts');
   await expect(code.locator('.hljs-keyword')).toHaveText('const');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
