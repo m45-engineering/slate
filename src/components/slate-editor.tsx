@@ -26,6 +26,8 @@ import type { ControlLayout } from '@/lib/control-structure/layout';
 import { createControlFile, isControlFile, readControlFile, writeControlFile } from '@/lib/control-structure/file';
 import { SourceEditor } from './source-editor';
 import { useFindReplace } from './use-find-replace';
+import { useGitDocument, GitToolbar, GitStatus, GitComparison } from './git-changes';
+import { GitWorkspaceChanges } from './git-workspace-changes';
 import { FindHighlights } from '@/lib/find-highlights';
 import { headingIndex } from '@/lib/headings';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
@@ -165,6 +167,8 @@ export function SlateEditor() {
     if (controlFile) setSource(writeControlFile(controlFile, text, identity, layout));
   }, [controlFile]);
   const unsupported = markdownDocument ? sourceOnlyReason(source) : null;
+  const git = useGitDocument(doc, savedSource);
+  const comparing = desktop && !readOnlyDocument && git.open;
   const dirtyRef = useRef(dirty);
   sourceRef.current = source;
   dirtyRef.current = dirty;
@@ -188,18 +192,20 @@ export function SlateEditor() {
   const find = useFindReplace({ editor, source: controlActive ? controlFile.source : source, mode: controlActive || reqifDocument ? 'source' : mode, documentId: doc.id, sourceInput, onSourceChange: controlActive ? updateControlSource : setSource });
 
   const openDocumentFind = useCallback((replace = false) => {
+    if (comparing) { setNotice('Close Changes to search or replace in the document.'); return; }
     if (previewRef.current) { previewRef.current.find(); return; }
     if (isModelFile(docRef.current.name)) { document.querySelector<HTMLInputElement>('[aria-label="Find diagram"]')?.focus(); return; }
     if ((controlActive || reqifDocument) && mode === 'visual') setMode('source');
     find.openFind(replace);
-  }, [controlActive, reqifDocument, mode, find.openFind]);
+  }, [comparing, controlActive, reqifDocument, mode, find.openFind]);
 
   const navigateDocumentFind = useCallback((direction: number) => {
+    if (comparing) return;
     if (previewRef.current) { previewRef.current.findNext(direction); return; }
     if (isModelFile(docRef.current.name)) return;
     if ((controlActive || reqifDocument) && mode === 'visual') setMode('source');
     find.navigate(direction);
-  }, [controlActive, reqifDocument, mode, find.navigate]);
+  }, [comparing, controlActive, reqifDocument, mode, find.navigate]);
 
   const cacheActive = useCallback(() => {
     tabDrafts.current.set(docRef.current.id, {
@@ -573,7 +579,7 @@ export function SlateEditor() {
       index += (token.raw.match(/\n/g) || []).length;
     }
   }
-  const toolbarDisabled = mode !== 'visual' || !markdownDocument || !editor;
+  const toolbarDisabled = comparing || mode !== 'visual' || !markdownDocument || !editor;
   const inTable = editor?.isActive('table') && !toolbarDisabled;
   void revision;
 
@@ -620,9 +626,10 @@ export function SlateEditor() {
     }}>
     <header className="titlebar">
       <div className="brand"><Tool label="Toggle sidebar" icon="panel" active={outlineOpen} onClick={() => setOutlineOpen(!outlineOpen)} /><span>Slate</span></div>
-      {readOnlyDocument ? <span className="source-caption">{modelDocument ? 'Model' : isPdfFile(doc.name) ? 'PDF' : 'Image'} · Read-only</span> : <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{(markdownDocument || controlDocument || reqifDocument) && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>}
+      {comparing ? <span className="source-caption git-mode-caption" role="status">Read-only comparison</span> : readOnlyDocument ? <span className="source-caption">{modelDocument ? 'Model' : isPdfFile(doc.name) ? 'PDF' : 'Image'} · Read-only</span> : <Tabs value={mode} onValueChange={value => { if (value !== mode) switchMode(); }}><TabsList className="mode-switch" aria-label="Editor view">{(markdownDocument || controlDocument || reqifDocument) && <TabsTrigger value="visual">Visual</TabsTrigger>}<TabsTrigger value="source">{markdownDocument ? <><span className="markdown-mark" aria-hidden="true">M↓</span>Markdown</> : 'Source'}</TabsTrigger></TabsList></Tabs>}
       <div className="file-actions">
-        <Tool label={`Find (${isMac ? '⌘' : 'Ctrl+'}F)`} icon="search" disabled={isImageFile(doc.name)} onClick={() => openDocumentFind()} />
+        {desktop && doc.path && !readOnlyDocument && <GitToolbar git={git} />}
+        <Tool label={`Find (${isMac ? '⌘' : 'Ctrl+'}F)`} icon="search" disabled={comparing || isImageFile(doc.name)} onClick={() => openDocumentFind()} />
         {desktop && markdownDocument && <TooltipHint content={exporting ? 'Exporting PDF…' : 'Export PDF'}><Button variant="ghost" className="text-button export-button" aria-label={exporting ? 'Exporting PDF' : 'Export PDF'} disabled={exporting || saving} onClick={() => void exportPdf()}><Icon name="file" /><span>{exporting ? 'Exporting…' : 'Export PDF'}</span></Button></TooltipHint>}
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="text-button"><Icon name="plus" /><span>New</span><Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => void newDocument()}>New Markdown document</DropdownMenuItem><DropdownMenuItem onSelect={() => void newControlStructure()}>New control structure</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="text-button"><Icon name="open" /><span>Open</span><Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => void open()}>Open file…</DropdownMenuItem><DropdownMenuItem onSelect={() => void openFolder()}>Open folder…</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
@@ -663,7 +670,7 @@ export function SlateEditor() {
       </>}
       <ResizablePanel id="editor" minSize={300}>
       <main className="editor-main">
-        <div style={readOnlyDocument || controlActive || (reqifDocument && mode === 'visual') ? { display: 'none' } : undefined} className={`formatbar ${toolbarDisabled ? 'source-formatbar' : ''}`} aria-label="Formatting toolbar">
+        <div style={comparing || readOnlyDocument || controlActive || (reqifDocument && mode === 'visual') ? { display: 'none' } : undefined} className={`formatbar ${toolbarDisabled ? 'source-formatbar' : ''}`} aria-label="Formatting toolbar">
           {toolbarDisabled ? <span className="source-caption"><Icon name="code" />{markdownDocument ? 'Markdown source' : language}</span> : <>
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button variant="ghost" className="text-style-trigger" aria-label="Text style"><span>{editor?.isActive('heading') ? `Heading ${editor.getAttributes('heading').level}` : 'Normal text'}</span><Icon name="chevron" size={13} /></Button></DropdownMenuTrigger>
@@ -694,8 +701,8 @@ export function SlateEditor() {
             <div className="toolbar-spacer" /><Tool label="Undo" icon="undo" disabled={!editor?.can().undo()} onClick={() => editor?.chain().focus().undo().run()} /><Tool label="Redo" icon="redo" disabled={!editor?.can().redo()} onClick={() => editor?.chain().focus().redo().run()} />
           </>}
         </div>
-        {!readOnlyDocument && find.bar}
-        {linkOpen && mode === 'visual' && <form className="link-popover" onSubmit={event => {
+        {!comparing && !readOnlyDocument && find.bar}
+        {!comparing && linkOpen && mode === 'visual' && <form className="link-popover" onSubmit={event => {
           event.preventDefault();
           if (!linkUrl) editor?.chain().focus().extendMarkRange('link').unsetLink().run();
           else if (!/^[a-z][a-z\d+.-]*:/i.test(linkUrl) || /^(https?:\/\/|file:\/\/)/i.test(linkUrl)) editor?.chain().focus().extendMarkRange('link').setLink({ href: linkUrl }).run();
@@ -703,7 +710,9 @@ export function SlateEditor() {
           setLinkOpen(false);
         }}><Input autoFocus aria-label="Link URL" placeholder="https://…" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} /><Button type="submit" size="sm">Apply</Button><Button variant="ghost" size="sm" onClick={() => setLinkOpen(false)}>Cancel</Button></form>}
         {inTable && <div className="table-actions" aria-label="Table actions"><span>Table</span><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().addRowAfter().run()}>+ Row</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().addColumnAfter().run()}>+ Column</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteRow().run()}>Delete row</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteColumn().run()}>Delete column</Button><Button variant="ghost" size="sm" onClick={() => editor?.chain().focus().deleteTable().run()}>Delete table</Button></div>}
-        <div className={`document-scroll${readOnlyDocument || controlActive || (reqifDocument && mode === 'visual') ? ' control-document-scroll' : ''}`} ref={scrollArea}>
+        <div className={`document-scroll${!comparing && (readOnlyDocument || controlActive || (reqifDocument && mode === 'visual')) ? ' control-document-scroll' : ''}`} ref={scrollArea}>
+          {comparing && <div className="paper git-paper" style={{ zoom: documentZoom / 100 }}><GitComparison key={doc.id} git={git} source={source} markdown={markdownDocument} dirty={dirty} /></div>}
+          <div style={{ display: comparing ? 'none' : 'contents' }}>
           {controlActive && <ControlStructureEditor key={doc.id} mode={mode} onModeChange={setMode} onSave={() => void save()} saveDisabled={saving || !dirty || controlInvalid} notice={notice} source={controlFile.source} layout={controlFile.layout} result={controlFile.result} onChange={updateControlSource} inputRef={sourceInput} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
           {modelDocument && <ModelViewer key={doc.id} content={doc.content} />}
           {isPdfFile(doc.name) && <PdfViewer key={doc.id} ref={previewRef} document={doc} onError={setNotice} />}
@@ -712,6 +721,7 @@ export function SlateEditor() {
           <div hidden={readOnlyDocument || controlActive || (reqifDocument && mode === 'visual')} className={`paper ${mode === 'source' ? 'source-paper' : ''} ${!markdownDocument ? 'code-paper' : ''}`} style={{ zoom: documentZoom / 100 }}>
             {/* Keep Tiptap mounted so its React plugins are not registered twice when switching views. */}
             <div hidden={mode !== 'visual' || !markdownDocument}><EditorContent editor={editor} /></div>{mode === 'source' && !readOnlyDocument && !controlActive && <SourceEditor key={doc.id} ref={sourceInput} value={source} filename={doc.name} label={markdownDocument ? 'Markdown source' : 'Source editor'} onChange={setSource} matches={find.sourceMatches} activeMatch={find.activeMatch} />}
+          </div>
           </div>
         </div>
       </main>
@@ -723,6 +733,7 @@ export function SlateEditor() {
         <Button asChild variant="ghost" className="footer-link"><a href="https://www.m45.engineering/" target="_blank" rel="noopener noreferrer">© 2026 by M45 Engineering Inc.</a></Button>
         <TooltipHint content="Slate on GitHub" side="top"><Button asChild variant="ghost" size="icon" className="footer-github"><a href="https://github.com/m45-engineering/slate" target="_blank" rel="noopener noreferrer" aria-label="Slate on GitHub"><img src="/github-mark.svg" width="16" height="16" alt="" /></a></Button></TooltipHint>
       </div>
+      {desktop && <div className="git-footer"><GitStatus git={git} />{folder && <GitWorkspaceChanges key={folder.path} onOpen={git.showDocument} unsavedNames={tabs.filter(tab => tab.id === doc.id ? dirty : Boolean(tabDrafts.current.get(tab.id)?.source !== tabDrafts.current.get(tab.id)?.savedSource || tab.unsaved)).map(tab => tab.name)} />}</div>}
       {(hoveredLink || focusedLink) && <span className="link-destination" aria-label="Link destination" title={hoveredLink || focusedLink}>{hoveredLink || focusedLink}</span>}
       {!previewDocument && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="zoom-control" aria-label="Document zoom">{documentZoom}%<Icon name="chevron" size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuRadioGroup value={String(documentZoom)} onValueChange={value => setDocumentZoom(Number(value))}>{ZOOM_LEVELS.map(value => <DropdownMenuRadioItem key={value} value={String(value)}>{value}%</DropdownMenuRadioItem>)}</DropdownMenuRadioGroup></DropdownMenuContent></DropdownMenu>}
     </footer>

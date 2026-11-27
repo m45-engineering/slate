@@ -7,6 +7,7 @@ const { isOpenableFile, isReadOnlyFile, isPreviewFile, isExternalFile, isMarkdow
 const { exportPdf } = require('./pdf-export.cjs');
 const { FolderStore } = require('./folder-store.cjs');
 const { resolveDocumentLink } = require('./document-links.cjs');
+const { readGitDocument, readGitChanges, readGitChange } = require('./git-store.cjs');
 
 const launchedFromSource = Boolean(process.defaultApp);
 const development = launchedFromSource && process.env.SLATE_DEV_URL === 'http://127.0.0.1:3210';
@@ -240,6 +241,13 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     return snapshot();
   });
   handle('document:open', () => exclusive(openDialog));
+  handle('document:git', async (id, revision = null) => {
+    try {
+      const record = documents.get(id);
+      if (!record?.document || isReadOnlyFile(record.name)) throw new Error('Open a saved text document to view Git changes.');
+      return { snapshot: await readGitDocument(record.document.path, revision) };
+    } catch (error) { return { error: error.message }; }
+  });
   async function revealPath(filePath) {
     await fs.promises.access(filePath);
     shell.showItemInFolder(filePath);
@@ -278,6 +286,18 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     confirmation = null;
   });
   handle('folder:ready', () => folder.snapshot());
+  handle('folder:git-changes', async (mode = 'local') => {
+    try {
+      if (!folder.root) throw new Error('Open a repository folder to see its changes.');
+      return { snapshot: await readGitChanges(folder.root, mode) };
+    } catch (error) { return { error: error.message }; }
+  });
+  handle('folder:git-change', async (mode, filename, expected) => {
+    try {
+      if (!folder.root) throw new Error('Open a repository folder to see its changes.');
+      return { preview: await readGitChange(folder.root, mode, filename, expected) };
+    } catch (error) { return { error: error.message }; }
+  });
   handle('folder:open', () => exclusive(async () => {
     const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'], title: 'Open folder in Slate' });
     if (result.canceled) return { canceled: true };

@@ -7,6 +7,19 @@ export type LocalFolder = { path: string; name: string };
 export type FolderEntry = { path: string; name: string; kind: 'directory' | 'file' | 'link'; editable: boolean };
 export type FolderListing = { entries?: FolderEntry[]; truncated?: boolean; error?: string };
 export type FolderSearch = { entries?: FolderEntry[]; total?: number; unreadableFolders?: number; error?: string };
+export type GitRevision = { hash: string; date: string; author: string; subject: string };
+export type GitFileChange = { path: string; status: string; previous: string | null };
+export type GitChangesMode = 'local' | 'branch';
+export type GitChangesSnapshot = {
+  root: string; folder: string; mode: GitChangesMode; branch: string | null; head: string | null;
+  base: string | null; mergeBase: string | null; commits: number; files: GitFileChange[];
+};
+export type GitChangePreview = { before: string; after: string; beforeExists: boolean; afterExists: boolean };
+export type GitSnapshot = {
+  root: string; branch: string | null; head: string | null; relative: string; history: GitRevision[];
+  baseline: { content: string; exists: boolean; revision: string | null };
+  base: string | null; ahead: number | null; behind: number | null;
+};
 
 export interface DesktopBridge {
   platform: string;
@@ -19,6 +32,7 @@ export interface DesktopBridge {
   newDocument(draft?: { name: string; content: string }): Promise<FileResult>;
   save(content: string, saveAs: boolean, options?: { id?: string; path: string | null; confirmationId?: number }): Promise<FileResult>;
   exportPdf(content: string, id: string): Promise<{ path?: string; canceled?: boolean; error?: string }>;
+  gitDocument(id: string, revision?: string | null): Promise<{ snapshot?: GitSnapshot; error?: string }>;
   copyText(text: string): Promise<void>;
   copyImage(png: Uint8Array): Promise<void>;
   activateTab(id: string): Promise<void>;
@@ -34,6 +48,8 @@ export interface DesktopBridge {
   confirmChanges(id: number, accepted: boolean): Promise<void>;
   onError(callback: (message: string) => void): () => void;
   folderReady(): Promise<LocalFolder | null>;
+  gitChanges(mode?: GitChangesMode): Promise<{ snapshot?: GitChangesSnapshot; error?: string }>;
+  gitChange(mode: GitChangesMode, path: string, expected: { head: string | null; base: string | null }): Promise<{ preview?: GitChangePreview; error?: string }>;
   openFolder(): Promise<{ folder?: LocalFolder; canceled?: boolean; error?: string }>;
   listFolder(relativePath: string): Promise<FolderListing>;
   searchFolder(query: string, refresh: boolean): Promise<FolderSearch>;
