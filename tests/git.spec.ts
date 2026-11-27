@@ -27,7 +27,15 @@ test('read-only Git comparison preserves drafts, displays history, and opens wor
   try {
     const page = await app.firstWindow();
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
-    await app.evaluate(({ BrowserWindow }) => { for (const window of BrowserWindow.getAllWindows()) { window.setContentSize(1250, 850); window.hide(); window.show = () => {}; window.focus = () => {}; } });
+    await app.evaluate(({ BrowserWindow }, ci) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.setContentSize(1250, 850);
+        window.webContents.setBackgroundThrottling(false);
+        // Match the desktop suite: CI exercises foreground input; local runs stay quiet.
+        if (ci) { window.show(); window.focus(); }
+        else { window.hide(); window.show = () => {}; window.focus = () => {}; }
+      }
+    }, Boolean(process.env.CI));
     await expect(page.getByRole('textbox', { name: 'Document editor', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Changes', exact: true }).click();
     await expect(page.getByText('Read-only comparison', { exact: true })).toBeVisible();
