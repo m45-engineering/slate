@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('slate', {
   gitChange: (mode, path, expected) => ipcRenderer.invoke('folder:git-change', mode, path, expected),
   openFolder: () => ipcRenderer.invoke('folder:open'),
   listFolder: (relativePath) => ipcRenderer.invoke('folder:list', relativePath),
+  searchContents: (query, matchCase) => ipcRenderer.invoke('folder:search-contents', query, matchCase),
+  cancelContentSearch: () => ipcRenderer.invoke('folder:cancel-search'),
   searchFolder: (query, refresh) => ipcRenderer.invoke('folder:search', query, refresh),
   openFile: (relativePath) => ipcRenderer.invoke('folder:open-file', relativePath),
   revealEntry: (relativePath) => ipcRenderer.invoke('folder:reveal', relativePath),

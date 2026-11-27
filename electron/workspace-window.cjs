@@ -310,6 +310,11 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     try { return await folder.list(relativePath); }
     catch (error) { return { error: error.message }; }
   });
+  handle('folder:search-contents', async (query, matchCase) => {
+    try { return await folder.searchContents(query, matchCase === true); }
+    catch (error) { return { error: error.message }; }
+  });
+  handle('folder:cancel-search', () => folder.cancelContentSearch());
   handle('folder:search', async (query, refresh) => {
     try { return await folder.search(query, refresh === true); }
     catch (error) { return { error: error.message }; }
@@ -541,6 +546,7 @@ function createWorkspaceWindow({ id, initialState, target, persist, onClosed, ne
     const editMenu = menu.getMenuItemById('edit-menu').submenu;
     for (const item of [
       { type: 'separator' },
+      { id: 'find-in-files', label: 'Find in Files…', accelerator: 'CmdOrCtrl+Shift+F', click: () => command('find-in-files') },
       { id: 'find', label: 'Find…', accelerator: 'CmdOrCtrl+F', click: () => command('find') },
       { id: 'replace', label: 'Find and Replace…', accelerator: process.platform === 'darwin' ? 'Alt+Command+F' : 'Ctrl+H', click: () => command('replace') },
       { id: 'find-next', label: 'Find Next', accelerator: 'CmdOrCtrl+G', click: () => command('find-next') },

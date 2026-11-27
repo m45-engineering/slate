@@ -1568,6 +1568,76 @@ test('sidebar keeps project controls and file search visible while browsing long
   await expect(sidebar.getByRole('navigation', { name: 'Document outline' })).toContainText('A real document');
 });
 
+test('content search finds nested files, opens highlighted source, refreshes disk changes, and retains filename search', async () => {
+  await mkdir(path.join(directory, 'nested'));
+  await writeFile(path.join(directory, 'nested', 'keywords.ts'), 'const first = 1;\nexport const ARTIFACT_KEYWORDS_INSTRUCTIONS = "search";\n');
+  await writeFile(path.join(directory, 'notes.md'), '# Notes\n\nartifact_keywords_instructions\n');
+  await application.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('find-in-files')!.click());
+  const query = page.getByRole('textbox', { name: 'Find text in files', exact: true });
+  await expect(query).toBeFocused();
+  await query.fill('ARTIFACT_KEYWORDS_INSTRUCTIONS');
+  const results = page.locator('.file-search-result');
+  await expect(results).toHaveCount(2);
+  await expect(results.filter({ hasText: 'keywords.ts' }).locator('.content-match')).toContainText('2: export const ARTIFACT_KEYWORDS_INSTRUCTIONS');
+  const matchCase = page.getByRole('button', { name: 'Match case in files', exact: true });
+  await matchCase.hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Case-sensitive search: off');
+  await matchCase.click();
+  await expect(matchCase).toHaveAttribute('aria-pressed', 'true');
+  await expect(matchCase).toHaveCSS('background-color', 'rgb(48, 48, 48)');
+  await expect(matchCase).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await query.hover();
+  await matchCase.hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Case-sensitive search: on');
+  await page.locator('.folder-sidebar').screenshot({ path: 'tmp/slate-case-sensitive-on.png' });
+  await expect(results).toHaveCount(1);
+  await results.click();
+  await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Find text', exact: true })).toHaveValue('ARTIFACT_KEYWORDS_INSTRUCTIONS');
+  await expect(page.locator('.search-highlights .find-match-active')).toHaveText('ARTIFACT_KEYWORDS_INSTRUCTIONS');
+  await writeFile(path.join(directory, 'new.txt'), 'ARTIFACT_KEYWORDS_INSTRUCTIONS');
+  await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
+  await expect(results).toHaveCount(2);
+  await page.getByRole('button', { name: 'Search mode', exact: true }).click();
+  await expect(page.getByRole('menuitemradio', { name: 'File contents', exact: true })).toBeChecked();
+  await page.getByRole('menu').screenshot({ path: 'tmp/slate-search-mode-menu.png' });
+  await page.getByRole('menuitemradio', { name: 'File names', exact: true }).click();
+  const names = page.getByRole('textbox', { name: 'Find file by name', exact: true });
+  await names.fill('keywords');
+  await expect(results).toHaveCount(1);
+  await page.getByRole('button', { name: 'Clear file search', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'nested', exact: true })).toBeVisible();
+});
+
+test('content search shortcut reveals a hidden sidebar and opens a Markdown match in source mode', async () => {
+  await writeFile(path.join(directory, 'search-notes.md'), '# Search notes\n\nA literal a.*[b] expression.\n');
+  await page.getByRole('button', { name: 'Toggle sidebar', exact: true }).click();
+  await page.keyboard.press('ControlOrMeta+Shift+f');
+  const query = page.getByRole('textbox', { name: 'Find text in files', exact: true });
+  await expect(query).toBeFocused();
+  await query.fill('a.*[b]');
+  await expect(page.locator('.file-search-result')).toHaveCount(1);
+  await page.locator('.file-search-result').click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source', exact: true })).toBeVisible();
+  await expect(page.locator('.search-highlights .find-match-active')).toHaveText('a.*[b]');
+  await page.locator('.folder-sidebar').screenshot({ path: 'tmp/slate-content-search.png' });
+  const handle = (await page.getByRole('separator', { name: 'Resize sidebar' }).boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x - 150, handle.y + handle.height / 2, { steps: 10 });
+  await page.mouse.up();
+  const row = (await page.locator('.file-search').boundingBox())!;
+  expect(row.height).toBe(32);
+  for (const control of [query, page.getByRole('button', { name: 'Search mode', exact: true }), page.getByRole('button', { name: 'Match case in files', exact: true }), page.getByRole('button', { name: 'Clear file search', exact: true })]) {
+    const box = (await control.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(row.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(row.x + row.width);
+    expect(Math.abs(box.y + box.height / 2 - (row.y + row.height / 2))).toBeLessThan(1);
+  }
+  expect((await query.boundingBox())!.width).toBeGreaterThan(40);
+  await page.locator('.folder-sidebar').screenshot({ path: 'tmp/slate-content-search-narrow.png' });
+});
+
 test('filename search opens a result from an unexpanded folder and clears back to the tree', async () => {
   await mkdir(path.join(directory, 'designs'));
   await writeFile(path.join(directory, 'designs', 'architecture.md'), '# Architecture\n');

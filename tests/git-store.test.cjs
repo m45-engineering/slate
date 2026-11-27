@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { readGitDocument, readGitChanges, readGitChange } = require('../electron/git-store.cjs');
+const { FolderStore } = require('../electron/folder-store.cjs');
 
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'slate-git-'));
@@ -27,6 +28,33 @@ async function fingerprint(root) {
   await visit(root);
   return files;
 }
+
+test('content search honors Git ignores, includes current tracked and untracked text, and scopes nested folders', async t => {
+  const { root, git } = await fixture(t);
+  await fs.mkdir(path.join(root, 'nested'));
+  await fs.writeFile(path.join(root, '.gitignore'), 'generated/\n*.log\n');
+  await fs.writeFile(path.join(root, 'nested', '.gitignore'), '*.txt\n!keep.txt\n');
+  await fs.writeFile(path.join(root, 'tracked.md'), 'old text');
+  git('add', '.');
+  await fs.writeFile(path.join(root, 'tracked.md'), 'needle from disk');
+  await fs.writeFile(path.join(root, 'untracked.md'), 'needle');
+  await fs.writeFile(path.join(root, 'nested', 'keep.txt'), 'needle');
+  await fs.writeFile(path.join(root, 'nested', 'ignored.txt'), 'needle');
+  await fs.mkdir(path.join(root, 'generated'));
+  await fs.writeFile(path.join(root, 'generated', 'ignored.md'), 'needle');
+  await fs.writeFile(path.join(root, 'ignored.log'), 'needle');
+  const store = new FolderStore();
+  await store.open(root);
+  const before = await fingerprint(root);
+  const result = await store.searchContents('needle');
+  assert.equal(result.usedGitIgnore, true);
+  assert.deepEqual(result.entries.map(entry => entry.path), ['nested/keep.txt', 'tracked.md', 'untracked.md']);
+  assert.deepEqual(await fingerprint(root), before);
+  await store.open(path.join(root, 'nested'));
+  assert.deepEqual((await store.searchContents('needle')).entries.map(entry => entry.path), ['keep.txt']);
+  await fs.rename(path.join(root, 'nested', 'keep.txt'), path.join(root, 'nested', 'renamed.md'));
+  assert.deepEqual((await store.searchContents('needle')).entries.map(entry => entry.path), ['renamed.md']);
+});
 
 test('Git inspection reads revisions and staged/unstaged changes without changing any files or index', async t => {
   const { root, git, file } = await fixture(t);

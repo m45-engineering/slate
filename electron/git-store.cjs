@@ -14,14 +14,16 @@ function decodeText(bytes) {
 }
 
 // Deliberately private: callers get a document snapshot, never a command runner.
-async function git(cwd, args, optional = false) {
+async function git(cwd, args, optional = false, { signal, allowMissingRepository = false } = {}) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
   Object.assign(env, { GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '', LC_ALL: 'C' });
   try {
     return (await execute('git', ['--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', ...args], {
-      cwd, env, encoding: 'buffer', timeout: 8000, maxBuffer: MAX_GIT_BYTES, windowsHide: true,
+      cwd, env, encoding: 'buffer', timeout: 8000, maxBuffer: MAX_GIT_BYTES, windowsHide: true, signal,
     })).stdout;
   } catch (error) {
+    if (signal?.aborted) throw error;
+    if (allowMissingRepository && (error.code === 'ENOENT' || error.stderr?.toString().includes('not a git repository'))) return null;
     if (optional && error.code === 1) return null;
     if (error.code === 'ENOENT') throw new Error('Git is not installed or is not available to Slate. Install Git, then reopen Slate.');
     const detail = error.stderr?.toString() || '';
@@ -30,6 +32,11 @@ async function git(cwd, args, optional = false) {
     if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') throw new Error('This committed document is too large to compare (2 MB limit).');
     throw new Error('Slate could not read this repository. Check its permissions and that its Git history is available locally.');
   }
+}
+
+async function readGitSearchFiles(folder, signal) {
+  const bytes = await git(folder, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', '.'], false, { signal, allowMissingRepository: true });
+  return bytes === null ? null : [...new Set(bytes.toString('utf8').split('\0').filter(Boolean))];
 }
 
 async function text(cwd, args, optional = false) {
@@ -169,4 +176,4 @@ async function readGitChange(folder, mode, filename, expected) {
   return { before: before.content, after: after.content, beforeExists: before.exists, afterExists: after.exists };
 }
 
-module.exports = { readGitDocument, readGitChanges, readGitChange };
+module.exports = { readGitDocument, readGitChanges, readGitChange, readGitSearchFiles };

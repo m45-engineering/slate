@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode, type MouseEvent, type KeyboardEvent, type DragEvent } from 'react';
-import { ChevronRight, File, FilePlus, FileText, Folder, FolderOpen, FolderPlus, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, File, FilePlus, FileText, Folder, FolderOpen, FolderPlus, RefreshCw, Search, X } from 'lucide-react';
 import type { FolderEntry, FolderListing, FolderSearch, LocalFolder } from '@/lib/document';
 import { revealLabel } from '@/lib/document';
 import { isExternalFile } from '../../electron/file-types.cjs';
@@ -13,7 +13,7 @@ import { TooltipHint } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type OpenEntryMenu = (entry: FolderEntry, point: { x: number; y: number }) => void;
@@ -120,12 +120,16 @@ function Entry({ entry, depth, currentPath, refreshKey, revealPath, onMenu, drag
   >{entry.editable ? <FileText /> : <File />}<span>{entry.name}</span></SidebarMenuButton></TooltipHint></SidebarMenuItem>;
 }
 
-export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, outline, onControlStructureCreated }: {
+export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, outline, onControlStructureCreated, searchRequest, onSearchResult }: {
+  searchRequest: number; onSearchResult(id: string, query: string, matchCase: boolean): void;
   folder: LocalFolder | null; documentPath: string | null; onOpenFolder(): void; onError(message: string): void; outline: ReactNode; onControlStructureCreated(): void;
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [tab, setTab] = useState('files');
   const [query, setQuery] = useState('');
+  const [searchMode, setSearchMode] = useState('name');
+  const [matchCase, setMatchCase] = useState(false);
+  const searchInput = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<FolderSearch | null>(null);
   const sidebar = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState(new Set<string>());
@@ -323,18 +327,24 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
   }, []);
 
   useEffect(() => {
+    if (!searchRequest) return;
+    setTab('files'); setSearchMode('contents');
+    requestAnimationFrame(() => searchInput.current?.focus());
+  }, [searchRequest]);
+
+  useEffect(() => {
     if (!query.trim() || !folder) { setResults(null); return; }
     let canceled = false;
     setResults(null);
     const timer = setTimeout(() => {
       const refresh = searchRefresh.current !== refreshKey;
       searchRefresh.current = refreshKey;
-      void window.slate?.searchFolder(query, refresh).then(value => { if (!canceled) setResults(value); }).catch(error => {
+      void (searchMode === 'contents' ? window.slate?.searchContents(query, matchCase) : window.slate?.searchFolder(query, refresh))?.then(value => { if (!canceled) setResults(value); }).catch(error => {
         if (!canceled) setResults({ error: String(error) });
       });
     }, 150);
-    return () => { canceled = true; clearTimeout(timer); };
-  }, [query, folder, refreshKey]);
+    return () => { canceled = true; clearTimeout(timer); void window.slate?.cancelContentSearch(); };
+  }, [query, folder, refreshKey, searchMode, matchCase]);
 
   const normalizedRoot = folder?.path.replace(/\\/g, '/');
   const normalizedFile = documentPath?.replace(/\\/g, '/');
@@ -343,6 +353,7 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
   async function openFile(relativePath: string) {
     const result = await window.slate?.openFile(relativePath);
     if (result?.error) onError(result.error);
+    if (result?.document && searchMode === 'contents' && query) onSearchResult(result.document.id, query, matchCase);
   }
 
   const actionTitle = action?.type === 'new-file' ? 'New File' : action?.type === 'new-folder' ? 'New Folder' : action?.type === 'rename' ? 'Rename' : 'Move to Trash?';
@@ -360,13 +371,28 @@ export function FolderSidebar({ folder, documentPath, onOpenFolder, onError, out
                 <TooltipHint content="New folder" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="New folder" onClick={() => beginCreate('new-folder')}><FolderPlus /></Button></TooltipHint>
                 <TooltipHint content="Refresh folder" side="right"><Button variant="ghost" size="icon" className="small-icon-button" aria-label="Refresh folder" onClick={() => setRefreshKey(value => value + 1)}><RefreshCw /></Button></TooltipHint>
               </div></div>
-              <div className="file-search"><Search size={14} /><Input aria-label="Find file by name" placeholder="Find a file…" value={query} maxLength={200} onChange={event => { clearSelection(); setQuery(event.target.value); }} />{query && <Button variant="ghost" size="icon" className="clear-search" aria-label="Clear file search" onClick={() => { clearSelection(); setQuery(''); }}><X size={13} /></Button>}</div>
+              <div className="file-search">
+                <DropdownMenu>
+                  <TooltipHint content={searchMode === 'contents' ? 'Search file contents' : 'Search file names'} side="top">
+                    <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="search-mode-button" aria-label="Search mode"><Search /><ChevronDown /></Button></DropdownMenuTrigger>
+                  </TooltipHint>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuRadioGroup value={searchMode} onValueChange={value => { clearSelection(); setSearchMode(value); }}>
+                      <DropdownMenuRadioItem value="name">File names</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="contents">File contents</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Input ref={searchInput} aria-label={searchMode === 'contents' ? 'Find text in files' : 'Find file by name'} placeholder={searchMode === 'contents' ? 'Files containing…' : 'Find a file…'} value={query} maxLength={200} onChange={event => { clearSelection(); setQuery(event.target.value); }} />
+                {searchMode === 'contents' && <TooltipHint content={`Case-sensitive search: ${matchCase ? 'on' : 'off'}`} side="top"><Button variant="ghost" size="icon" className="search-case-button case-sensitive-toggle" aria-label="Match case in files" aria-pressed={matchCase} onClick={() => setMatchCase(value => !value)}>Aa</Button></TooltipHint>}
+                {query && <Button variant="ghost" size="icon" className="clear-search" aria-label="Clear file search" onClick={() => { clearSelection(); setQuery(''); }}><X size={13} /></Button>}
+              </div>
               {selected.size > 1 && <div className="file-selection"><span role="status">{selected.size} files selected</span><Button variant="ghost" size="sm" aria-label="Move selected files" onClick={() => void moveFiles([...selected])}>Move…</Button></div>}
             </div>
             {query.trim() ? <div aria-live="polite" className="file-search-results">
               {!results ? <p className="tree-hint">Searching…</p> : results.error ? <p className="tree-hint">{results.error}</p> : <>
                 <p className="tree-hint search-count">{results.total ? `${results.total} ${results.total === 1 ? 'file' : 'files'}${results.total > 100 ? ' · showing first 100' : ''}` : 'No matching files'}</p>
-                <SidebarMenu>{results.entries?.map(entry => <SidebarMenuItem key={entry.path}><TooltipHint content={entry.path} side="right"><SidebarMenuButton {...entryMenuProps(entry, openMenu)} {...entryDragProps(entry, drag)} data-file-path={entry.path} data-selected={selected.has(entry.path)} aria-pressed={selected.has(entry.path)} className="file-search-result" isActive={currentPath === entry.path} onClick={event => selection.click(entry, event)}><FileText /><span><span>{entry.name}</span><small>{entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : folder.name}</small></span></SidebarMenuButton></TooltipHint></SidebarMenuItem>)}</SidebarMenu>
+                <SidebarMenu>{results.entries?.map(entry => <SidebarMenuItem key={entry.path}><TooltipHint content={entry.match ? `${entry.path}:${entry.match.line} — ${entry.match.preview}` : entry.path} side="right"><SidebarMenuButton {...entryMenuProps(entry, openMenu)} {...entryDragProps(entry, drag)} data-file-path={entry.path} data-selected={selected.has(entry.path)} aria-pressed={selected.has(entry.path)} className="file-search-result" isActive={currentPath === entry.path} onClick={event => selection.click(entry, event)}><FileText /><span><span>{entry.name}</span><small>{entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : folder.name}</small>{entry.match && <small className="content-match">{entry.match.line}: {entry.match.preview.slice(0, entry.match.start)}<mark>{entry.match.preview.slice(entry.match.start, entry.match.start + entry.match.length)}</mark>{entry.match.preview.slice(entry.match.start + entry.match.length)}</small>}</span></SidebarMenuButton></TooltipHint></SidebarMenuItem>)}</SidebarMenu>
                 {Boolean(results.unreadableFolders) && <p className="tree-hint">Some folders could not be read and were skipped.</p>}
               </>}
             </div> : <Directory key={folder.path} relativePath="" depth={0} currentPath={currentPath} refreshKey={refreshKey} revealPath={revealPath} onMenu={openMenu} drag={drag} selection={selection} />}

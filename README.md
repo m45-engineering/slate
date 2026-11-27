@@ -12,7 +12,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-2.0.0-mac-arm64.dmg` from the [v2.0.0 release](https://github.com/m45-engineering/slate/releases/tag/v2.0.0). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-2.1.0-mac-arm64.dmg` from the [v2.1.0 release](https://github.com/m45-engineering/slate/releases/tag/v2.1.0). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -22,13 +22,13 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-2.0.0-win-x64.exe` from the [v2.0.0 release](https://github.com/m45-engineering/slate/releases/tag/v2.0.0) for a standard Intel/AMD PC.
+1. Download `Slate-2.1.0-win-x64.exe` from the [v2.1.0 release](https://github.com/m45-engineering/slate/releases/tag/v2.1.0) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Download both installers from the [v2.0.0 release](https://github.com/m45-engineering/slate/releases/tag/v2.0.0). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in. Published release installers are available without signing in.
+Download both installers from the [v2.1.0 release](https://github.com/m45-engineering/slate/releases/tag/v2.1.0). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in. Published release installers are available without signing in.
 
 ## Features
 
@@ -60,6 +60,12 @@ Download both installers from the [v2.0.0 release](https://github.com/m45-engine
 - Detection of changes made by other editors, with Reload and Save a copy actions.
 - Bundled Geist Sans and Geist Mono; no font downloads or server at runtime.
 - A local recovery draft for unsaved edits. This is a convenience, not a backup system.
+
+## Search in files
+
+Press **⌘⇧F / Ctrl+Shift+F** to search saved text and code in the open folder, including nested folders. The search menu switches between **File names** and **File contents**. Content search matches literal text; **Aa** turns case sensitivity on or off. Results show a line number and first-match preview. Select a result to open its source with matching text highlighted.
+
+Each search reads current files from disk; there is no content index to maintain. Unsaved drafts are not searched. In Git repositories, Slate uses Git’s file listing to exclude ignored untracked files. Dependency folders, symbolic links, binary files, unreadable files, and files larger than 10 MiB are skipped. Results count all matching files and display the first 100. Use **Refresh folder** to repeat a search after external changes.
 
 ## Read-only Git changes
 

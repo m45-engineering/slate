@@ -59,6 +59,101 @@ test('filename search includes text and source without expanding folders and ref
   assert.equal((await store.search('no-such-file')).total, 0);
 });
 
+test('content search finds literal text with case options and a bounded first-match preview', async t => {
+  const { root, store } = await fixture(t);
+  await fs.writeFile(path.join(root, 'docs', 'source.ts'), 'const before = 1;\r\n' + ' '.repeat(100) + 'ARTIFACT_KEYWORDS_INSTRUCTIONS = "a.*[b]";\r\nARTIFACT_KEYWORDS_INSTRUCTIONS');
+  let result = await store.searchContents('artifact_keywords_instructions');
+  assert.equal(result.total, 1);
+  assert.equal(result.entries[0].path, 'docs/source.ts');
+  const match = result.entries[0].match;
+  assert.equal(match.line, 2);
+  assert.equal(match.preview.slice(match.start, match.start + match.length), 'ARTIFACT_KEYWORDS_INSTRUCTIONS');
+  assert.ok(match.preview.startsWith('…'));
+  assert.equal((await store.searchContents('artifact_keywords_instructions', true)).total, 0);
+  assert.equal((await store.searchContents('a.*[b]', true)).total, 1);
+  assert.equal((await store.searchContents('a.*[c]', true)).total, 0);
+  assert.equal((await store.searchContents('')).total, 0);
+  await assert.rejects(store.searchContents('x\ny'), /single line/);
+  await assert.rejects(store.searchContents('x'.repeat(201)), /200/);
+});
+
+test('content search reads fresh files, skips excluded folders, binary and oversized files, and reports unreadable files', async t => {
+  const { root, store } = await fixture(t);
+  assert.equal((await store.searchContents('needle')).total, 0);
+  await fs.writeFile(path.join(root, 'docs', 'new.py'), 'needle');
+  await fs.writeFile(path.join(root, '.github', 'workflow.yml'), 'needle');
+  await fs.writeFile(path.join(root, '.git', 'hidden.txt'), 'needle');
+  await fs.writeFile(path.join(root, 'node_modules', 'hidden.js'), 'needle');
+  await fs.writeFile(path.join(root, 'binary.txt'), 'needle\0');
+  await fs.writeFile(path.join(root, 'image.png'), 'needle');
+  await fs.writeFile(path.join(root, 'large.txt'), 'needle');
+  await fs.truncate(path.join(root, 'large.txt'), 10 * 1024 * 1024 + 1);
+  await fs.writeFile(path.join(root, 'denied.txt'), 'needle');
+  const open = fs.open;
+  t.mock.method(fs, 'open', async (...args) => {
+    if (args[0].endsWith('denied.txt')) throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+    return open(...args);
+  });
+  let result = await store.searchContents('needle');
+  assert.deepEqual(result.entries.map(entry => entry.path), ['.github/workflow.yml', 'docs/new.py']);
+  assert.equal(result.skippedFiles, 3);
+  await fs.writeFile(path.join(root, 'docs', 'new.py'), 'changed');
+  result = await store.searchContents('needle');
+  assert.equal(result.total, 1);
+});
+
+test('content search limits displayed results while counting all matching files', async t => {
+  const { root, store } = await fixture(t);
+  await Promise.all(Array.from({ length: 105 }, (_, i) => fs.writeFile(path.join(root, `match-${i}.txt`), 'needle needle')));
+  const result = await store.searchContents('needle');
+  assert.equal(result.total, 105);
+  assert.equal(result.entries.length, 100);
+});
+
+test('content search does not follow symbolic links or read an indexed path replaced by an outside symlink', { skip: process.platform === 'win32' }, async t => {
+  const { root, store } = await fixture(t);
+  const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'slate-search-outside-'));
+  t.after(() => fs.rm(outside, { recursive: true, force: true }));
+  await fs.writeFile(path.join(outside, 'secret.txt'), 'needle');
+  await fs.symlink(outside, path.join(root, 'outside'));
+  await fs.symlink(path.join(outside, 'secret.txt'), path.join(root, 'link.txt'));
+  assert.equal((await store.searchContents('needle')).total, 0);
+  const build = store.buildSearchIndex.bind(store);
+  t.mock.method(store, 'buildSearchIndex', async signal => {
+    const index = await build(signal);
+    await fs.unlink(path.join(root, 'README.md'));
+    await fs.symlink(path.join(outside, 'secret.txt'), path.join(root, 'README.md'));
+    return index;
+  });
+  const result = await store.searchContents('needle');
+  assert.equal(result.total, 0);
+  assert.equal(result.skippedFiles, 1);
+});
+
+test('new content queries and folder switches cancel obsolete scans', async t => {
+  const { root, store } = await fixture(t);
+  const build = store.buildSearchIndex.bind(store);
+  let release;
+  const waiting = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
+  let pause = true;
+  let started;
+  const scanning = new Promise(resolve => { started = resolve; });
+  t.mock.method(store, 'buildSearchIndex', async signal => {
+    if (pause) { pause = false; started(); await waiting; }
+    return build(signal);
+  });
+  const canceled = assert.rejects(store.searchContents('old'), { name: 'AbortError' });
+  await scanning;
+  assert.equal((await store.searchContents('Read me')).total, 1);
+  release();
+  await canceled;
+  const switching = assert.rejects(store.searchContents('Read me'), { name: 'AbortError' });
+  await store.open(path.join(root, 'docs'));
+  await switching;
+  assert.equal((await store.searchContents('Design')).total, 1);
+});
+
 test('filename search reaches matches beyond 50,000 entries and reuses the complete index', async t => {
   const { store } = await fixture(t);
   const entry = name => ({ name, isDirectory: () => false, isFile: () => true });

@@ -3,6 +3,7 @@ const { constants } = require('node:fs');
 const path = require('node:path');
 const { MAX_BYTES } = require('./file-store.cjs');
 const { isTextFile, isOpenableFile } = require('./file-types.cjs');
+const { readGitSearchFiles } = require('./git-store.cjs');
 
 const HIDDEN_DIRECTORIES = new Set(['.git', 'node_modules', '.next', '.venv', '__pycache__']);
 
@@ -16,8 +17,15 @@ class FolderStore {
   root = null;
   searchIndex = null;
   searchAbort = null;
+  contentAbort = null;
+
+  cancelContentSearch() {
+    this.contentAbort?.abort();
+    this.contentAbort = null;
+  }
 
   invalidateSearchIndex() {
+    this.cancelContentSearch();
     this.searchAbort?.abort();
     this.searchAbort = null;
     this.searchIndex = null;
@@ -207,6 +215,78 @@ class FolderStore {
     }
     signal.throwIfAborted();
     return { entries, unreadableFolders };
+  }
+
+  async searchContents(query, matchCase = false) {
+    this.cancelContentSearch();
+    if (!this.root) throw new Error('Open a folder first.');
+    if (typeof query !== 'string' || query.length > 200 || /[\r\n]/.test(query)) throw new Error('Enter a single line of text up to 200 characters.');
+    const result = { entries: [], total: 0, unreadableFolders: 0, skippedFiles: 0, usedGitIgnore: false };
+    if (!query) return result;
+    const controller = new AbortController();
+    this.contentAbort = controller;
+    const { signal } = controller;
+    const root = this.root;
+    // Scan afresh: both file contents and directory entries can change outside Slate.
+    try {
+      const gitFiles = await readGitSearchFiles(root, signal);
+      signal.throwIfAborted();
+      result.usedGitIgnore = gitFiles !== null;
+      const index = gitFiles === null ? await this.buildSearchIndex(signal) : {
+        entries: gitFiles.filter(relative => !relative.split('/').some(part => HIDDEN_DIRECTORIES.has(part))).map(relative => ({
+          name: path.basename(relative), path: relative, kind: 'file', editable: true,
+        })), unreadableFolders: 0,
+      };
+      result.unreadableFolders = index.unreadableFolders;
+      const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? '' : 'i');
+      index.entries.sort((a, b) => a.path.localeCompare(b.path));
+      for (const entry of index.entries) {
+        signal.throwIfAborted();
+        if (!isTextFile(entry.name)) continue;
+        let handle;
+        try {
+          // Recheck containment before reading; an indexed entry may have been replaced.
+          const absolute = await this.resolve(entry.path);
+          signal.throwIfAborted();
+          if (absolute !== path.join(root, entry.path)) { result.skippedFiles++; continue; }
+          handle = await fs.open(absolute, 'r');
+          const stat = await handle.stat();
+          if (!stat.isFile() || stat.size > MAX_BYTES) { result.skippedFiles++; continue; }
+          // A bounded read also protects against a file growing during the scan.
+          const buffer = Buffer.alloc(Math.min(stat.size + 1, MAX_BYTES + 1));
+          let length = 0;
+          while (length < buffer.length) {
+            signal.throwIfAborted();
+            const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null);
+            if (!bytesRead) break;
+            length += bytesRead;
+          }
+          if (length > stat.size || buffer.subarray(0, length).includes(0)) { result.skippedFiles++; continue; }
+          const content = buffer.toString('utf8', 0, length);
+          const match = pattern.exec(content);
+          if (!match) continue;
+          result.total++;
+          if (result.entries.length === 100) continue;
+          const from = match.index;
+          const lineStart = content.lastIndexOf('\n', from - 1) + 1;
+          const nextNewline = content.indexOf('\n', from);
+          const lineEnd = nextNewline === -1 ? content.length : nextNewline;
+          const start = Math.max(lineStart, from - 60);
+          const end = Math.min(lineEnd, from + match[0].length + 120);
+          const prefix = start > lineStart ? '…' : '';
+          result.entries.push({ ...entry, match: {
+            line: content.slice(0, from).split('\n').length,
+            preview: prefix + content.slice(start, end).replace(/\r$/, '') + (end < lineEnd ? '…' : ''),
+            start: prefix.length + from - start, length: match[0].length,
+          } });
+        } catch (error) {
+          signal.throwIfAborted();
+          result.skippedFiles++;
+        } finally { await handle?.close(); }
+      }
+      signal.throwIfAborted();
+      return result;
+    } finally { if (this.contentAbort === controller) this.contentAbort = null; }
   }
 
   async search(query, refresh = false) {
