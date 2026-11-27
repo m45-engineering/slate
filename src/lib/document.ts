@@ -6,7 +6,7 @@ export type FileResult = { document?: SlateDocument; openedExternally?: boolean;
 export type LocalFolder = { path: string; name: string };
 export type FolderEntry = { path: string; name: string; kind: 'directory' | 'file' | 'link'; editable: boolean };
 export type FolderListing = { entries?: FolderEntry[]; truncated?: boolean; error?: string };
-export type FolderSearch = { entries?: FolderEntry[]; total?: number; unreadableFolders?: number; error?: string };
+export type FolderSearch = { entries?: (FolderEntry & { match?: { line: number; preview: string; start: number; length: number } })[]; total?: number; skippedFiles?: number; usedGitIgnore?: boolean; unreadableFolders?: number; error?: string };
 export type GitRevision = { hash: string; date: string; author: string; subject: string };
 export type GitFileChange = { path: string; status: string; previous: string | null };
 export type GitChangesMode = 'local' | 'branch';
@@ -52,6 +52,8 @@ export interface DesktopBridge {
   gitChange(mode: GitChangesMode, path: string, expected: { head: string | null; base: string | null }): Promise<{ preview?: GitChangePreview; error?: string }>;
   openFolder(): Promise<{ folder?: LocalFolder; canceled?: boolean; error?: string }>;
   listFolder(relativePath: string): Promise<FolderListing>;
+  searchContents(query: string, matchCase: boolean): Promise<FolderSearch>;
+  cancelContentSearch(): Promise<void>;
   searchFolder(query: string, refresh: boolean): Promise<FolderSearch>;
   openFile(relativePath: string): Promise<FileResult>;
   revealEntry(relativePath: string): Promise<{ canceled?: boolean; error?: string }>;

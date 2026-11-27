@@ -8,6 +8,7 @@ import { findHighlightsKey } from '@/lib/find-highlights';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Icon } from './icon';
+import { TooltipHint } from './ui/tooltip';
 
 export function useFindReplace({ editor, source, mode, documentId, sourceInput, onSourceChange }: {
   editor: Editor | null; source: string; mode: 'visual' | 'source'; documentId: string;
@@ -72,6 +73,11 @@ export function useFindReplace({ editor, source, mode, documentId, sourceInput, 
     setFocusRequest(value => value + 1);
   }, [editor, mode, source, sourceInput]);
 
+  const searchFor = useCallback((text: string, caseSensitive: boolean) => {
+    setQuery(text); setMatchCase(caseSensitive); setAnchor(0);
+    setOpen(true); setReplaceOpen(false); setFocusRequest(value => value + 1);
+  }, []);
+
   const close = () => {
     setOpen(false);
     if (mode === 'visual') {
@@ -125,7 +131,7 @@ export function useFindReplace({ editor, source, mode, documentId, sourceInput, 
       <Button variant="ghost" size="sm" aria-label={replaceOpen ? 'Hide replace' : 'Show replace'} aria-expanded={replaceOpen} onClick={() => setReplaceOpen(!replaceOpen)}>{replaceOpen ? '−' : '+'}</Button>
       <Input ref={findInput} aria-label="Find text" placeholder="Find in document" value={query} onChange={event => { setQuery(event.target.value); setAnchor(0); }} spellCheck={false} />
       <span className="find-count" role="status" aria-live="polite">{query ? matches.length ? `${active + 1} of ${matches.length}` : 'No matches' : 'Type to find'}</span>
-      <Button variant={matchCase ? 'secondary' : 'ghost'} size="sm" aria-label="Match case" aria-pressed={matchCase} onClick={() => { setMatchCase(!matchCase); setAnchor(0); }}>Aa</Button>
+      <TooltipHint content={`Case-sensitive search: ${matchCase ? 'on' : 'off'}`} side="top"><Button variant="ghost" size="sm" className="case-sensitive-toggle" aria-label="Match case" aria-pressed={matchCase} onClick={() => { setMatchCase(!matchCase); setAnchor(0); }}>Aa</Button></TooltipHint>
       <Button variant="ghost" size="sm" aria-label="Previous match" disabled={!matches.length} onClick={() => navigate(-1)}>↑</Button>
       <Button variant="ghost" size="sm" aria-label="Next match" disabled={!matches.length} onClick={() => navigate(1)}>↓</Button>
       <Button variant="ghost" size="sm" aria-label="Close find" onClick={close}><Icon name="close" size={14} /></Button>
@@ -137,5 +143,5 @@ export function useFindReplace({ editor, source, mode, documentId, sourceInput, 
     </div>}
   </div>;
 
-  return { bar, openFind, navigate, sourceMatches: mode === 'source' ? matches : [], activeMatch: active };
+  return { bar, openFind, searchFor, navigate, sourceMatches: mode === 'source' ? matches : [], activeMatch: active };
 }

@@ -74,6 +74,8 @@ export function SlateEditor() {
     setDocumentZoom(current => direction === 'reset' ? 100 : ZOOM_LEVELS[Math.min(ZOOM_LEVELS.length - 1, Math.max(0, ZOOM_LEVELS.indexOf(current) + (direction === 'in' ? 1 : -1)))]);
   }, []);
   const [outlineOpen, setOutlineOpen] = useState(true);
+  const [searchRequest, setSearchRequest] = useState(0);
+  const [pendingSearch, setPendingSearch] = useState<{ id: string; query: string; matchCase: boolean } | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(250);
   const sidebarPanel = useRef<PanelImperativeHandle | null>(null);
   const currentSidebarWidth = useRef(250);
@@ -190,6 +192,14 @@ export function SlateEditor() {
   });
 
   const find = useFindReplace({ editor, source: controlActive ? controlFile.source : source, mode: controlActive || reqifDocument ? 'source' : mode, documentId: doc.id, sourceInput, onSourceChange: controlActive ? updateControlSource : setSource });
+
+  useEffect(() => {
+    if (!pendingSearch || pendingSearch.id !== doc.id) return;
+    setMode('source');
+    if (git.open) git.toggle();
+    find.searchFor(pendingSearch.query, pendingSearch.matchCase);
+    setPendingSearch(null);
+  }, [pendingSearch, doc.id, find.searchFor, git]);
 
   const openDocumentFind = useCallback((replace = false) => {
     if (comparing) { setNotice('Close Changes to search or replace in the document.'); return; }
@@ -520,6 +530,7 @@ export function SlateEditor() {
       if (command === 'zoom-in') zoomDocument('in');
       if (command === 'zoom-out') zoomDocument('out');
       if (command === 'zoom-reset') zoomDocument('reset');
+      if (command === 'find-in-files' && !confirmation && !formula) { setOutlineOpen(true); setSearchRequest(value => value + 1); }
       if (command === 'find' && !confirmation && !formula) openDocumentFind();
       if (command === 'replace' && !confirmation && !formula) openDocumentFind(true);
       if (command === 'find-next' && !confirmation && !formula) navigateDocumentFind(1);
@@ -529,6 +540,7 @@ export function SlateEditor() {
       if (!(event.metaKey || event.ctrlKey)) return;
       if (!confirmation && !formula) {
         const key = event.key.toLowerCase();
+        if (key === 'f' && event.shiftKey) { event.preventDefault(); setOutlineOpen(true); setSearchRequest(value => value + 1); return; }
         if (key === 'f' || (event.ctrlKey && key === 'h') || (event.metaKey && event.altKey && key === 'f')) {
           event.preventDefault();
           openDocumentFind(event.altKey || key === 'h');
@@ -664,7 +676,7 @@ export function SlateEditor() {
       }}>
       {outlineOpen && <>
       <ResizablePanel id="files" panelRef={sidebarPanel} defaultSize={sidebarWidth} minSize={180} maxSize={520} groupResizeBehavior="preserve-pixel-size" onResize={size => { currentSidebarWidth.current = size.inPixels; }}>
-      <FolderSidebar onControlStructureCreated={() => setMode('source')} folder={folder} documentPath={doc.path} onOpenFolder={() => void openFolder()} onError={setNotice} outline={<nav className="outline" aria-label="Document outline">{headings.length ? headings.map((heading, index) => <Button variant="ghost" key={`${index}-${heading.index}`} className={`${heading.level === 1 ? 'outline-title' : ''}`} style={{ paddingLeft: `${Math.max(0, heading.level - 2) * 10 + 12}px` }} onClick={() => jumpToHeading(heading)}>{heading.text}</Button>) : <p className="outline-empty">{markdownDocument ? <>Your headings will<br />appear here.</> : <>Outline is available for<br />Markdown documents.</>}</p>}</nav>} />
+      <FolderSidebar searchRequest={searchRequest} onSearchResult={(id, query, matchCase) => setPendingSearch({ id, query, matchCase })} onControlStructureCreated={() => setMode('source')} folder={folder} documentPath={doc.path} onOpenFolder={() => void openFolder()} onError={setNotice} outline={<nav className="outline" aria-label="Document outline">{headings.length ? headings.map((heading, index) => <Button variant="ghost" key={`${index}-${heading.index}`} className={`${heading.level === 1 ? 'outline-title' : ''}`} style={{ paddingLeft: `${Math.max(0, heading.level - 2) * 10 + 12}px` }} onClick={() => jumpToHeading(heading)}>{heading.text}</Button>) : <p className="outline-empty">{markdownDocument ? <>Your headings will<br />appear here.</> : <>Outline is available for<br />Markdown documents.</>}</p>}</nav>} />
       </ResizablePanel>
       <ResizableHandle aria-label="Resize sidebar" className="workspace-resize-handle" />
       </>}

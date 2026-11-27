@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0 - 2026-11-27
+
+- Search saved text and code across the open folder with ⌘⇧F / Ctrl+Shift+F. See line-numbered previews and open matches directly in highlighted source.
+- Read current files on each search, respecting Git ignore rules for untracked files without maintaining a content index.
+- Switch filename and content search through a compact shadcn menu in a single-row search bar.
+- Make case-sensitive search easy to identify with tooltips and a clearly visible enabled state in both search bars.
+- Use simple color fills for search highlights, without brown borders.
+
 ## 2.0.0 - 2026-11-27
 
 Slate 2.0 adds read-only Git history and change review to the local editor. Document formats and explicit Save behavior are unchanged. Commit, push, pull request creation, and merge remain in your usual Git tools.
