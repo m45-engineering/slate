@@ -124,7 +124,7 @@ test('PR preview compares the shared ancestor with committed branch content acro
   await fs.writeFile(path.join(root, 'untracked.md'), 'not in PR');
   const before = await fingerprint(root);
   const snapshot = await readGitChanges(path.join(root, 'docs'), 'branch');
-  assert.equal(snapshot.folder, await fs.realpath(root));
+  assert.equal(path.normalize(snapshot.folder), await fs.realpath(root));
   assert.equal(snapshot.mergeBase, ancestor);
   assert.equal(snapshot.commits, 1);
   assert.deepEqual(snapshot.files.map(item => [item.path, item.status]), [['added.md', 'A'], ['deleted.md', 'D'], ['docs/new.md', 'R'], ['spec.md', 'M']]);
