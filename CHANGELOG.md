@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0 - 2026-11-27
+
+Slate 2.0 adds read-only Git history and change review to the local editor. Document formats and explicit Save behavior are unchanged. Commit, push, pull request creation, and merge remain in your usual Git tools.
+
+- Detect existing local repositories automatically when opening a file or folder. Compare document text inline with its latest committed version or one of the last 30 commits affecting its current path, including unsaved drafts.
+- Browse saved changes across the open folder, with All / Edited / New and other status filters, path search, an expandable folder hierarchy, and an adjacent source preview. Preserve compact folder paths and sticky headings without repeated file badges or folder counts.
+- Preview committed changes across the whole repository against the shared ancestor with local main. Keep uncommitted edits separate and show exact revisions under Git details. This preview does not fetch or require a remote pull request.
+- Move the changes dialog by its header and resize it from its bottom-right corner. Use a compact header, smaller source text, and restrained change highlights to leave more space for content.
+- Clearly identify document comparisons as read-only and provide a prominent Exit comparison action. Preserve drafts when entering, leaving, or opening another document from a comparison.
+- Explain unsupported previews, unresolved conflicts, missing history, and comparison limits. Keep complete source comparisons available for formatting, links, diagrams, and other changes that inline text alone cannot represent.
+- Git inspection does not stage, commit, push, switch branches, merge, restore files, or run external diff helpers.
+
 ## 0.1.13 - 2026-11-27
 
 - Open and edit Markdown reports with angle-bracketed link destinations and autolinks in Visual view. These links no longer trigger the embedded-HTML warning.

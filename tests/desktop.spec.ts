@@ -3702,8 +3702,12 @@ test('connector edits change endpoints and relationship without losing identity 
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Select connection Pilot → Plant: Run', exact: true })).toHaveAttribute('data-diagram-id', id);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await delayDocumentWrite(target);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  // Save is also disabled while writing; wait for the save reply before closing.
+  await expect(page.getByRole('tablist', { name: 'Open documents' })
+    .getByRole('tab', { selected: true }).locator('.unsaved-dot')).toHaveCount(0);
   await restart();
   await expect(page.getByRole('button', { name: 'Select connection Plant → Observer: Actual state', exact: true })).toHaveAttribute('data-diagram-id', id);
 });

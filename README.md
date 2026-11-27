@@ -1,6 +1,6 @@
 # Slate
 
-A quiet place to write. A local Markdown, text, and code editor with document and model previews for macOS and Windows, built with Electron, Next.js, and Tiptap.
+A quiet place to write and review changes. A local Markdown, text, and code editor with read-only Git history, document and model previews for macOS and Windows, built with Electron, Next.js, and Tiptap.
 
 ![Slate showing a fictional rover project with document tabs, a folder sidebar, a formula, a Mermaid diagram, a checklist, and a table.](docs/images/slate.png)
 
@@ -12,7 +12,7 @@ The desktop installers are self-contained. You do **not** need Node.js, pnpm, or
 
 ### macOS
 
-1. Download `Slate-0.1.13-mac-arm64.dmg` from the [v0.1.13 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.13). This build supports Apple Silicon Macs; an Intel build is not yet available.
+1. Download `Slate-2.0.0-mac-arm64.dmg` from the [v2.0.0 release](https://github.com/m45-engineering/slate/releases/tag/v2.0.0). This build supports Apple Silicon Macs; an Intel build is not yet available.
 2. Open the `.dmg` and drag **Slate** to **Applications**.
 3. Launch **Slate** from Applications or press **⌘Space** and type **Slate**.
 
@@ -22,16 +22,17 @@ The Apple Silicon installer is ad-hoc signed, without Apple notarization. If mac
 
 ### Windows
 
-1. Download `Slate-0.1.13-win-x64.exe` from the [v0.1.13 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.13) for a standard Intel/AMD PC.
+1. Download `Slate-2.0.0-win-x64.exe` from the [v2.0.0 release](https://github.com/m45-engineering/slate/releases/tag/v2.0.0) for a standard Intel/AMD PC.
 2. Run the `.exe` and follow the installation wizard. Installation is per-user; you can choose the destination folder.
 3. Open **Slate** from the Start menu.
 
 Quit Slate before installing an update. The Windows build is not yet signed with a trusted certificate, so Windows may show a publisher warning. Run it only if you trust its source.
 
-Download both installers from the [v0.1.13 release](https://github.com/m45-engineering/slate/releases/tag/v0.1.13). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in; while the repository is private, downloads also require repository access.
+Download both installers from the [v2.0.0 release](https://github.com/m45-engineering/slate/releases/tag/v2.0.0). They contain the code from that release, not later changes on `main`. The [Build Slate workflow](https://github.com/m45-engineering/slate/actions/workflows/build.yml) builds and tests newer changes on Windows and macOS. To try a newer successful build, download its matching artifact (`slate-windows-latest` or `slate-macos-latest`) and extract the ZIP. Downloading workflow artifacts requires GitHub sign-in. Published release installers are available without signing in.
 
 ## Features
 
+- Read-only Git history and change comparisons: inspect document edits inline, browse saved changes across a folder, and preview committed branch changes against local main. Filter changed files by type, search their paths, and move or resize the comparison dialog.
 - Visual editing and raw Markdown, with a document outline.
 - Find and replace in the current document, with highlighted matches, next/previous navigation, match-case, and Replace All. Use ⌘F / Ctrl+F to find; ⌥⌘F on macOS or Ctrl+H on Windows to replace. Enter / Shift+Enter steps through matches; Escape closes the bar. Visual replacements preserve surrounding formatting; Markdown and source mode search the exact file text.
 - A resizable shadcn folder sidebar with lazy directory browsing, live filename search, current-file highlighting, and an Outline tab. Markdown opens in the visual editor; text and code open in the source editor. PDFs, images, and supported model archives open as read-only previews. Word and Excel files open in their default apps; other unsupported files remain visible for context.
@@ -59,6 +60,24 @@ Download both installers from the [v0.1.13 release](https://github.com/m45-engin
 - Detection of changes made by other editors, with Reload and Save a copy actions.
 - Bundled Geist Sans and Geist Mono; no font downloads or server at runtime.
 - A local recovery draft for unsaved edits. This is a convenience, not a backup system.
+
+## Read-only Git changes
+
+New in **Slate 2.0**: inspect what changed without leaving your editor. Git operations remain read-only; continue committing, pushing, and creating or merging pull requests in your usual Git tools. Normal document editing and explicit Save still write your files.
+
+Open an existing local repository with **Open → Open folder**, or open a file inside it. Slate detects Git automatically; no account or separate connection step is needed. Git must be installed and available on the computer. Slate does not clone repositories or connect to live pull request status.
+
+Choose **Changes** to compare the open document with its latest committed version. Markdown shows text additions and deletions inline in a separate read-only view. A persistent **Read-only comparison** indicator identifies this mode; choose **Exit comparison** to return to your editable document and preserved unsaved draft. Unsaved edits are included and labeled. **History** lets you compare with one of the last 30 commits affecting the current file path. History does not follow renames across older paths.
+
+**All source changes** includes formatting, link destinations, diagram source, and whitespace changes that are not fully represented by inline text highlights. Source-only Markdown and other text formats use a source comparison. Large comparisons stop with an explanation rather than blocking editing: committed content is limited to 2 MB and inline comparisons to 200,000 characters per version.
+
+**Workspace changes → On this computer** lists saved changes in the open folder. The summary is a set of filters: All, Edited, New, and any other change types present, each with its total count. Search works within the selected category. Ordinary edited files show only their filename; in All, small unboxed markers distinguish new (+), removed (−), renamed (arrow), and conflicted files (warning triangle). The selected file’s header spells out its status. Hover a file for its full path and status; status names are also available to screen readers. Branch names, revision identifiers, and the selected file’s staging status are available under **Git details**, rather than repeated in the file list. An expandable folder tree preserves the hierarchy, with indentation and folder headings that stay visible as you scroll. Folder labels have no counts. Single-child folder paths share a row to save space. Searching by path opens matching folders automatically. Selecting a file shows its source changes beside the list, including deleted text. Additions use a soft green highlight without underlining; deletions retain strikethrough. **Open document** opens an existing supported text file in the document comparison, including its unsaved Slate draft. The overview itself uses saved disk content and identifies unsaved drafts separately. Ignored files are excluded; binary files and symbolic links are listed without text previews.
+
+**Workspace changes → Review preview** previews committed changes across the entire repository, even when a subfolder is open. It compares the branch tip with its shared ancestor with **local main**, matching a three-dot PR comparison. Changes made only on main, staged edits, unstaged edits, and untracked files are excluded. Renames retain their original path for comparison. **Git details** identifies the exact branch, main, and shared ancestor revisions used; if either moves before a file preview loads, refresh the list. No push or pull request is needed to populate this preview; it uses commits already on your current branch. This is not a live remote PR: Slate never fetches, and local main may be behind the remote. Update main using your usual Git tool when needed. Missing main, unrelated histories, and ambiguous multiple shared ancestors produce an explanation instead of a misleading comparison.
+
+Drag the changes dialog by its header to move it, or use its bottom-right corner to resize it. It stays within the window and opens centered again next time. Its compact header and source text leave more room for the file list and highlighted changes; comparison details remain available under **Git details**.
+
+Git inspection never stages, commits, pushes, switches branches, merges, or restores files. It does not run external diff helpers or filesystem monitors. Document history refreshes when Slate regains focus, when the document is saved, and every 30 seconds while Changes is open; **Refresh Git history** refreshes it explicitly. The workspace overview has its own Refresh action. These are local snapshots, not live remote or approval status.
 
 ## ReqIF requirements
 
@@ -281,4 +300,4 @@ All visible application controls use these shared components: buttons, text inpu
 
 Keep M45 colors and typography in `src/app/globals.css`: near-black text, readable secondary text, white surfaces, restrained hover backgrounds, and explicit keyboard focus. Avoid native `title` tooltips, browser confirmation dialogs, decorative borders, and per-control gray overrides. Heading previews share the document's type-size tokens. The desktop tests check component usage, minimum 4.5:1 text contrast for enabled buttons, keyboard focus, and confirmation behavior.
 
-Current scope is a focused local editor. Collaboration, Git operations, Word export, plugins, and cloud sync are not part of this version.
+Current scope is a focused local editor with read-only Git inspection. Collaboration, Git writes, live pull request status, Word export, plugins, and cloud sync are not part of this version.
