@@ -2716,9 +2716,18 @@ test('native file drops copy multiple files into a folder and root without chang
   await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
   await page.getByRole('textbox', { name: 'Markdown source' }).fill('# Keep my draft\n');
+  // The first file can exist while the rest of the batch is still copying.
+  await application.evaluate(() => {
+    const fs = process.getBuiltinModule('fs/promises');
+    const copyFile = fs.copyFile;
+    fs.copyFile = async (...args) => {
+      if (String(args[0]).endsWith('attachment.pdf')) await new Promise(resolve => setTimeout(resolve, 300));
+      return copyFile(...args);
+    };
+  });
   await dropNativeFiles(page.getByRole('button', { name: 'archive', exact: true }), [text, binary]);
   await expect.poll(() => readFile(path.join(archive, 'imported.md'), 'utf8').catch(() => null)).toBe('# Imported\r\n');
-  expect(await readFile(path.join(archive, 'attachment.pdf'))).toEqual(await readFile(binary));
+  await expect.poll(() => readFile(path.join(archive, 'attachment.pdf')).catch(() => null)).toEqual(await readFile(binary));
   expect(await readFile(text, 'utf8')).toBe('# Imported\r\n');
   await expect(page.getByRole('button', { name: 'imported.md', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'attachment.pdf', exact: true })).toBeEnabled();
