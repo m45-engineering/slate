@@ -75,7 +75,9 @@ export function sourceOnlyReason(markdown: string): string | null {
     }
     return !fence;
   }).join('\n').replace(/(?<![\\`])(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)/g, span => span.replace(/[^\n]/g, ' '));
-  if (/<!--|<\/?[a-z][^>]*>/i.test(prose)) return 'HTML';
+  // A tag name must end before attributes or the closing bracket. Angle-wrapped
+  // Markdown destinations and autolinks (<https://…>, <name@example.com>) aren't tags.
+  if (/<!--|<\/?[a-z][a-z0-9-]*(?=[\s/>])[^>]*>/i.test(prose)) return 'HTML';
   if (/!\[[^\]]*\]/.test(prose)) return 'images';
   if (/^\s{0,3}\[[^\]]+\]:/m.test(prose)) return 'reference definitions or footnotes';
   return null;

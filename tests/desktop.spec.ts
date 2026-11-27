@@ -535,17 +535,18 @@ test('Visual code blocks highlight fence languages and keep edits and undo as pl
     window.getSelection()!.removeAllRanges();
     window.getSelection()!.addRange(range);
   });
-  await page.keyboard.type(' // edited');
+  // Insert one edit so Undo doesn't depend on the timing between keystrokes.
+  await page.keyboard.insertText(' // edited');
   await expect(code.locator('.hljs-comment')).toHaveText('// edited');
   await page.keyboard.press('ControlOrMeta+z');
-  await expect(code).toHaveText('const value = 42;');
+  await expect(code).toHaveJSProperty('textContent', 'const value = 42;');
   await expect(code.locator('.hljs-comment')).toHaveCount(0);
   await page.keyboard.type(' // kept');
   await expect(code.locator('.hljs-comment')).toHaveText('// kept');
   const language = block.getByRole('textbox', { name: 'Code language' });
   await language.fill('unknown-language');
   await expect(code.locator('[class*="hljs-"]')).toHaveCount(0);
-  await expect(code).toHaveText('const value = 42; // kept');
+  await expect(code).toHaveJSProperty('textContent', 'const value = 42; // kept');
   await language.fill('ts');
   await expect(code.locator('.hljs-keyword')).toHaveText('const');
   await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
@@ -1262,6 +1263,42 @@ test('PDF export reports unsupported Markdown and file write failures without lo
   await expect(source).toHaveValue('# Preserve these unsaved edits\n');
   expect(application.windows()).toHaveLength(1);
   expect(await readFile(file, 'utf8')).toBe(original);
+});
+
+test('angle-wrapped report links survive visual editing, saving, and reopening', async () => {
+  const report = '# Research report\n\n[Paper](<https://example.com/paper>)\n\n<https://example.com/autolink>\n\n| Source | Notes |\n| --- | --- |\n| [Citation](<https://example.com/citation](https://example.com/citation)>) | Evidence |\n';
+  const target = path.join(directory, 'report.md');
+  await writeFile(target, report);
+  await restart(target);
+  let editor = page.getByRole('textbox', { name: 'Document editor', exact: true });
+  await expect(editor).toBeVisible();
+  const hrefs = () => editor.locator('a').evaluateAll(links => links.map(link => link.getAttribute('href')));
+  const expected = ['https://example.com/paper', 'https://example.com/autolink', 'https://example.com/citation](https://example.com/citation)'];
+  expect(await hrefs()).toEqual(expected);
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(report);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await editor.locator('h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' updated');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(page.getByRole('tab', { name: 'report.md', exact: true })).toHaveAttribute('aria-selected', 'true');
+  expect(await readFile(target, 'utf8')).toContain('Research report updated');
+  await restart();
+  editor = page.getByRole('textbox', { name: 'Document editor', exact: true });
+  await expect(page.getByRole('heading', { name: 'Research report updated', exact: true })).toBeVisible();
+  expect(await hrefs()).toEqual(expected);
+  await expect(editor.locator('td').filter({ hasText: 'Evidence' })).toHaveCount(1);
+
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Markdown source' });
+  const html = report + '\n<a id="report_section_1"></a>\n';
+  await source.fill(html);
+  await page.getByRole('tab', { name: 'Visual', exact: true }).click();
+  await expect(source).toHaveValue(html);
+  await expect(page.getByRole('status').filter({ hasText: 'Keep this document in Markdown to preserve its HTML.' })).toBeVisible();
 });
 
 test('View menu switches modes without a custom shortcut and preserves source-only content', async () => {
@@ -2938,6 +2975,7 @@ test('identified controller entries and rules show persistent IDs in details and
   const content = await readFile(path.join(process.cwd(), 'tests/fixtures/vigil-1-rule-identities.yaml'), 'utf8');
   const target = path.join(directory, 'identified-vigil.yaml');
   await writeFile(target, content);
+  await delayDocumentWrite(target);
   await page.evaluate(() => window.slate!.openFile('identified-vigil.yaml'));
   await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
   await page.getByRole('button', { name: 'Select component Onboard activity control', exact: true }).click();
@@ -2960,12 +2998,13 @@ test('identified controller entries and rules show persistent IDs in details and
   const updated = source.replace('Preserve source measurement times.', 'Preserve original measurement times.');
   await input.fill(updated);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  // Save is also disabled during a write. Wait for the tab's unsaved marker to clear.
+  await expect(page.getByRole('tab', { name: 'identified-vigil.yaml', exact: true })).toHaveAttribute('aria-selected', 'true');
   const reordered = updated.replace(`  ${algorithm.rules[0].text}\n  ${algorithm.rules[1].text.replace('Preserve source measurement times.', 'Preserve original measurement times.')}`, `  ${algorithm.rules[1].text.replace('Preserve source measurement times.', 'Preserve original measurement times.')}\n  ${algorithm.rules[0].text}`);
   expect(reordered).not.toBe(updated);
   await input.fill(reordered);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(page.getByRole('tab', { name: 'identified-vigil.yaml', exact: true })).toHaveAttribute('aria-selected', 'true');
   await restart();
   details = page.getByRole('dialog', { name: 'Component details', exact: true });
   await expect(page.locator('.control-preview')).toHaveAttribute('data-diagram-status', 'ready');
